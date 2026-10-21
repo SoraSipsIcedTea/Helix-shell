@@ -15,60 +15,99 @@
   ];
   SYSTEM.forEach(function (a) { a.system = true; });
 
-  var SUITES = [
-    { role: 'aura', name: 'Aura360', about: 'Dein Tag, deine Ziele, dein Leben im Blick', glyph: 'sun-moon', colors: ['#F6C08C', '#B66A2C'] },
-    { role: 'devworks', name: 'Devworks Studio', about: 'Apps bauen, testen und ausliefern', glyph: 'code', colors: ['#2DD4BF', '#0E6F66'] },
-    { role: 'cockpit', name: 'Cockpit', about: 'Steuerzentrale für deine Projekte', glyph: 'activity', colors: ['#7DA2FF', '#3550B8'] }
-  ];
+  /*
+   * Installierte Pakete kommen vom Server. Ein Paket ist entweder eine App oder eine Suite:
+   * eine Suite (helix-app.json „apps“) zeigt jede ihrer Apps einzeln – als Eintrag mit der id
+   * „<paket>/<app>“, gleichem Origin und damit gemeinsamem Speicher. Keine Suite ist besonders.
+   */
+  var packages = [];
+  var items = [];
 
-  var installed = [];
+  function expand(pkg) {
+    pkg.iconUrl = pkg.icon;
+    if (!pkg.apps || !pkg.apps.length) return [pkg];
+    return pkg.apps.map(function (s) {
+      return {
+        id: pkg.id + '/' + s.id, name: s.name, about: s.description || '', url: s.url, path: s.path,
+        origin: pkg.origin, iconUrl: s.icon || pkg.icon, pkg: pkg, sub: s, suite: pkg.name,
+        shortcuts: [], version: pkg.version
+      };
+    });
+  }
+  function dirOf(path) { return '/' + String(path || '').replace(/[?#].*$/, '').replace(/[^/]*$/, ''); }
+
   var Apps = HX.apps = {
     system: SYSTEM,
-    suites: SUITES,
-    installed: function () { return installed; },
-    all: function () { return SYSTEM.concat(installed); },
+    /** Alles, was man starten kann: einzelne Apps und die Apps der Suiten. */
+    installed: function () { return items; },
+    packages: function () { return packages; },
+    all: function () { return SYSTEM.concat(items); },
     get: function (id) {
       if (!id) return null;
-      for (var i = 0; i < SYSTEM.length; i++) if (SYSTEM[i].id === id) return SYSTEM[i];
-      for (var j = 0; j < installed.length; j++) if (installed[j].id === id) return installed[j];
+      var i;
+      for (i = 0; i < SYSTEM.length; i++) if (SYSTEM[i].id === id) return SYSTEM[i];
+      for (i = 0; i < items.length; i++) if (items[i].id === id) return items[i];
+      for (i = 0; i < packages.length; i++) if (packages[i].id === id) return packages[i];
       return null;
     },
-    /** App für einen Verweis aus einer anderen App: id, Rolle („aura“) oder Manifest-id. */
+    /** Verweis einer App auf eine andere: id, „suite/app“, Manifest-id, Name, Rolle oder App einer Suite. */
     resolve: function (ref) {
       if (!ref) return null;
       ref = String(ref);
       var a = Apps.get(ref) || Apps.get('sys:' + ref);
       if (a) return a;
-      var low = ref.toLowerCase();
-      for (var i = 0; i < installed.length; i++) {
-        var x = installed[i];
-        if (x.role === low || (x.manifestId && x.manifestId.toLowerCase() === low) || x.name.toLowerCase() === low) return x;
+      var low = ref.toLowerCase(), i;
+      var slash = low.indexOf('/');
+      if (slash > 0) {
+        var p = Apps.resolve(low.slice(0, slash));
+        if (p && p.apps) return Apps.get(p.id + '/' + low.slice(slash + 1));
+        return null;
       }
+      for (i = 0; i < packages.length; i++) {
+        var x = packages[i];
+        if ((x.manifestId && x.manifestId.toLowerCase() === low) || x.name.toLowerCase() === low || x.role === low) return x;
+      }
+      for (i = 0; i < items.length; i++) if (items[i].sub && (items[i].sub.id === low || items[i].name.toLowerCase() === low)) return items[i];
       return null;
     },
     byOrigin: function (origin) {
-      for (var i = 0; i < installed.length; i++) if (installed[i].origin === origin) return installed[i];
+      for (var i = 0; i < packages.length; i++) if (packages[i].origin === origin) return packages[i];
       return null;
     },
-    suite: function (role) {
-      for (var i = 0; i < installed.length; i++) if (installed[i].role === role) return installed[i];
-      return null;
+    /** Zu welcher App gehört eine Adresse? Bei Suiten die App, in deren Ordner die Seite liegt. */
+    forUrl: function (url) {
+      var u;
+      try { u = new URL(url); } catch (e) { return null; }
+      var pkg = Apps.byOrigin(u.origin);
+      if (!pkg) return null;
+      var best = null, len = 0;
+      items.forEach(function (it) {
+        if (it.pkg !== pkg) return;
+        var d = dirOf(it.path);
+        if (u.pathname.indexOf(d) === 0 && d.length > len) { best = it; len = d.length; }
+      });
+      return best || pkg;
+    },
+    /** Gehört ein Fenster-Eintrag zu dieser App (auch: zur Suite)? */
+    belongs: function (item, target) {
+      return item === target || item.id === target.id || (item.pkg && item.pkg.id === target.id);
     },
     refresh: function () {
-      if (!HX.online) return Promise.resolve(installed);
+      if (!HX.online) return Promise.resolve(items);
       return HX.api('/api/apps').then(function (list) {
-        installed = (list || []).map(function (a) {
-          a.iconUrl = a.icon;
-          return a;
-        }).sort(function (a, b) { return a.name.localeCompare(b.name, 'de'); });
-        HX.emit('apps', installed);
-        return installed;
+        packages = (list || []).sort(function (a, b) { return a.name.localeCompare(b.name, 'de'); });
+        var next = [];
+        packages.forEach(function (p) { next = next.concat(expand(p)); });
+        // Offene Fenster behalten ihre Einträge (gleiche id) – nur die Daten frisch.
+        items = next;
+        HX.emit('apps', items);
+        return items;
       }).catch(function (e) {
         console.warn('[HX] apps', e);
-        return installed;
+        return items;
       });
     },
-    /** Adresse, unter der die App im Fenster startet. */
+    /** Adresse, unter der die App im Fenster startet. path: Seite relativ zur Paketwurzel, oder #… / ?… zur App. */
     urlFor: function (app, path) {
       if (app.system) {
         var u = new URL(app.path, location.href);
@@ -77,6 +116,7 @@
       }
       if (path && typeof path === 'string') {
         if (/^https?:/i.test(path)) return path;
+        if (path.charAt(0) === '#' || path.charAt(0) === '?') return app.url.replace(path.charAt(0) === '#' ? /#.*$/ : /[?#].*$/, '') + path;
         return app.origin + '/' + path.replace(/^\/+/, '');
       }
       return app.url;
@@ -87,7 +127,7 @@
       if (!q) return list;
       return list.filter(function (a) {
         return a.name.toLowerCase().indexOf(q) >= 0 || (a.about && a.about.toLowerCase().indexOf(q) >= 0) ||
-          (a.roleLabel && a.roleLabel.toLowerCase().indexOf(q) >= 0);
+          (a.suite && a.suite.toLowerCase().indexOf(q) >= 0);
       });
     }
   };

@@ -46,11 +46,18 @@
   <h2>Für App-Entwickler</h2>
   <p>Jede App bekommt <code>window.Helix</code>. Ein paar Beispiele:</p>
 <pre>Helix.fs.request()                   // Dateizugriff erbitten
-Helix.fs.list('home', 'Dokumente')
-Helix.shared.open('helix')           // gemeinsame Ablage der Suiten
+Helix.fs.list('device', 'Download')  // Gerätespeicher (nach Freigabe)
+Helix.shared.open('helix')           // gemeinsame Ablage aller Apps
 Helix.shell.notify('Fertig', 'Export gespeichert')
-Helix.shell.open('aura', 'index.html#heute')
 Helix.shell.update()                 // im App-Center nach Updates suchen</pre>
+  <h2>Apps sprechen miteinander</h2>
+  <p>Jede App findet jede andere und kann ihr Nachrichten schicken, auch über Suiten hinweg. Der Desktop stellt sie den offenen Fenstern der Ziel-App zu und öffnet sie auf Wunsch im Hintergrund.</p>
+<pre>Helix.apps.list()                       // alle installierten Apps
+Helix.apps.find('cockpit')              // per id, Manifest-id oder Name
+Helix.apps.open('aura360/orbit', '#open=…')
+Helix.apps.send('cockpit', { fahrt })   // an alle offenen Fenster
+Helix.apps.request('aura360/orbit', { frage: 'adresse', name: 'Arbeit' }, { open: true })
+Helix.apps.onMessage((data, from) =&gt; antwort)</pre>
   <p>Mit einer <code>helix-app.json</code> im Paket legst du Name, Version, Symbol, Direktlinks und eine Update-Adresse fest:</p>
 <pre>{
   "id": "meine-app",
@@ -60,6 +67,11 @@ Helix.shell.update()                 // im App-Center nach Updates suchen</pre>
   "update": "https://example.org/meine-app.zip",
   "shortcuts": [{ "name": "Neu", "path": "index.html#neu" }]
 }</pre>
+  <p>Eine <b>Suite</b> ist ein Paket mit mehreren Apps. Sie stehen unter <code>"apps"</code> und erscheinen einzeln im Starter; alle laufen unter derselben Adresse und teilen sich ihre Daten:</p>
+<pre>"apps": [
+  { "id": "money", "name": "Money", "path": "apps/money/index.html", "icon": "apps/money/icon.svg" },
+  { "id": "orbit", "name": "Orbit", "path": "apps/orbit/index.html" }
+]</pre>
   <p>Die DevTools (eruda) öffnest du über das Fenstermenü. Im <b>Terminal</b> zeigt <code>logs</code> alle Konsolen-Ausgaben live.</p>
 
   <h2>Tastatur</h2>

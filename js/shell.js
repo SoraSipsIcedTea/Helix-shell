@@ -264,7 +264,7 @@
     } });
     if (!app.system) {
       items.push({ label: 'Auf den Startbildschirm', icon: 'smartphone', run: function () { shell.homeShortcut(app, app.url, app.name); } });
-      items.push({ label: 'App-Infos', icon: 'info', run: function () { shell.openApp('sys:appcenter', { app: app.id }); } });
+      items.push({ label: 'App-Infos', icon: 'info', run: function () { shell.openApp('sys:appcenter', { app: (app.pkg || app).id }); } });
     }
     if (ws.length) {
       items.push('-');
@@ -293,7 +293,7 @@
     return b;
   }
   function pinIcon(p, i) {
-    var app = Apps.byOrigin(safeOrigin(p.url));
+    var app = Apps.forUrl(p.url);
     var look = { id: p.url, name: p.title || 'Direktlink', iconUrl: app ? app.iconUrl : null, glyph: app ? null : 'link' };
     var run = function () { openUrl(p.url); };
     var b = deskIcon(look, run, false);
@@ -314,47 +314,46 @@
   }
   function safeOrigin(u) { try { return new URL(u).origin; } catch (e) { return ''; } }
 
+  /** Einzelne Apps zuerst („Deine Apps“), dann je Suite ein Abschnitt mit ihren Apps. */
+  function groupApps(list) {
+    var single = [], suites = {}, order = [];
+    list.forEach(function (a) {
+      if (!a.pkg) { single.push(a); return; }
+      if (!suites[a.pkg.id]) { suites[a.pkg.id] = { title: a.pkg.name, suite: a.pkg, list: [] }; order.push(a.pkg.id); }
+      suites[a.pkg.id].list.push(a);
+    });
+    var out = [];
+    if (single.length) out.push({ title: 'Deine Apps', list: single });
+    order.forEach(function (id) { out.push(suites[id]); });
+    return out;
+  }
+
   function homeView() {
     var d = new Date();
     var v = el('div.home', null,
       el('div.home-clock', { text: HX.fmt.time(d) }),
       el('div.home-date', { text: HX.fmt.day(d) }));
-    // Die drei Suiten des Ökosystems
-    var su = el('div.suites');
-    Apps.suites.forEach(function (s) {
-      var app = Apps.suite(s.role);
-      var card = el('div.suite', { class: app ? null : 'missing', role: app ? 'button' : null, tabindex: app ? '0' : null },
-        HX.appIcon(app || s, 46),
-        el('div.t', null, el('div.n', { text: app ? app.name : s.name }), el('div.s', { text: app ? (app.version ? 'Version ' + app.version : s.about) : 'Nicht installiert' })),
-        app ? icon('chevron-right') : el('button.btn.ghost', { type: 'button', text: 'Installieren', onclick: function () { shell.openApp('sys:appcenter', { suite: s.role }); } }));
-      if (app) {
-        card.addEventListener('click', function (e) { if (!e.target.closest('.chip')) shell.openApp(app.id); });
-        longPress(card, function (at) { appMenu(app, at); });
-        if (app.shortcuts && app.shortcuts.length) {
-          var chips = el('div.chips');
-          app.shortcuts.slice(0, 5).forEach(function (sc) {
-            chips.appendChild(el('button.chip', { type: 'button', text: sc.name, onclick: function () { WM.open(app, { url: sc.url, newWindow: true }); } }));
-          });
-          card.appendChild(chips);
-        }
-      }
-      su.appendChild(card);
-    });
-    v.appendChild(el('h2', { text: 'Suiten' }));
-    v.appendChild(su);
-    var others = Apps.installed().filter(function (a) { return Apps.suites.every(function (s) { return s.role !== a.role; }); });
     var pins = HX.prefs.get('pins') || [];
-    v.appendChild(el('h2', { text: 'Deine Apps' }));
-    if (!others.length && !pins.length) {
+    var groups = groupApps(Apps.installed());
+    if (!groups.length && !pins.length) {
+      v.appendChild(el('h2', { text: 'Deine Apps' }));
       v.appendChild(el('div.suite', { role: 'button', tabindex: '0', onclick: function () { shell.openApp('sys:appcenter'); } },
         HX.appIcon(Apps.get('sys:appcenter'), 46),
         el('div.t', null, el('div.n', { text: 'App hinzufügen' }), el('div.s', { text: 'Paket installieren oder einen Ordner verbinden' })),
         icon('chevron-right')));
-    } else {
+    }
+    groups.forEach(function (gr, gi) {
+      v.appendChild(el('h2', { text: gr.title }));
       var g = el('div.home-grid');
-      others.forEach(function (a) { g.appendChild(deskIcon(a, function () { shell.openApp(a.id); }, true)); });
-      pins.forEach(function (p, i) { g.appendChild(pinIcon(p, i)); });
+      gr.list.forEach(function (a) { g.appendChild(deskIcon(a, function () { shell.openApp(a.id); }, true)); });
+      if (gi === 0 && !gr.suite) pins.forEach(function (p, i) { g.appendChild(pinIcon(p, i)); });
       v.appendChild(g);
+    });
+    if (pins.length && (!groups.length || groups[0].suite)) {
+      v.appendChild(el('h2', { text: 'Direktlinks' }));
+      var pg = el('div.home-grid');
+      pins.forEach(function (p, i) { pg.appendChild(pinIcon(p, i)); });
+      v.appendChild(pg);
     }
     v.appendChild(el('h2', { text: 'Helix' }));
     var sg = el('div.home-grid');
@@ -412,9 +411,9 @@
       longPress(b, function (at) { appMenu(a, at); });
       return b;
     };
-    section('Deine Apps', mine, mkApp);
+    groupApps(mine).forEach(function (gr) { section(gr.title, gr.list, mkApp); });
     section('Direktlinks', pins, function (p) {
-      var app = Apps.byOrigin(safeOrigin(p.url));
+      var app = Apps.forUrl(p.url);
       var b = el('button.desk-icon', { type: 'button' }, HX.appIcon({ id: p.url, name: p.title, iconUrl: app && app.iconUrl, glyph: app ? null : 'link' }, 58), el('span.label', { text: p.title || 'Direktlink' }));
       b.addEventListener('click', function () { closeLauncher(); openUrl(p.url); });
       return b;
@@ -632,11 +631,9 @@
       var sys = m && Apps.get('sys:' + m[1]);
       if (sys) { WM.open(sys, { url: u.href }); return; }
     }
-    var app = Apps.byOrigin(u.origin);
+    var app = Apps.forUrl(u.href);
     if (app) {
-      var ex = WM.ofApp(app.id)[0];
-      if (ex && !app.single) { WM.open(app, { url: u.href, newWindow: true }); return; }
-      if (ex) { WM.post(ex, 'navigate', { url: u.href }); WM.restore(ex); return; }
+      // Eine Adresse einer App: im vorhandenen Fenster dieser App öffnen, sonst in einem neuen.
       WM.open(app, { url: u.href });
       return;
     }
@@ -654,6 +651,7 @@
   };
   shell.homeShortcut = function (app, url, title) {
     if (!H) return;
+    app = app.pkg || app;
     var path = '';
     try { var u = new URL(url); if (u.origin === app.origin) path = u.pathname.replace(/^\//, '') + u.search + u.hash; } catch (e) { }
     HX.api('/api/system/pin-shortcut', { method: 'POST', json: { app: app.id, name: title || app.name, path: path } })
@@ -749,7 +747,14 @@
     var a = m.args || {};
     var reply = function (v) { if (m.rid) try { ev.source.postMessage({ __helix: 1, rid: m.rid, value: v }, ev.origin); } catch (e) { } };
     switch (m.op) {
-      case 'state': WM.setState(w, a); break;
+      case 'state':
+        WM.setState(w, a);
+        if (!w.ready) {
+          w.ready = true;
+          WM.post(w, 'theme', { theme: themeNow() }, 100);   // Apps können Hell/Dunkel übernehmen
+          HX.emit('ready', w);
+        }
+        break;
       case 'title': WM.setTitle(w, a.title); break;
       case 'close': WM.close(w); break;
       case 'notify':
@@ -759,14 +764,49 @@
       case 'open': {
         var target = Apps.resolve(a.app);
         if (!target) { HX.toast('„' + a.app + '“ ist nicht installiert.'); reply(false); break; }
-        WM.open(target, { path: a.path || null, newWindow: !!a.path && !target.single });
+        WM.open(target, { path: a.path || null });
         reply(true);
+        break;
+      }
+      case 'send': {
+        var to = Apps.resolve(a.app);
+        if (!to) { reply({ delivered: 0, error: { name: 'NotFoundError', message: '„' + a.app + '“ ist nicht installiert.' } }); break; }
+        sendTo(w, to, a, reply);
         break;
       }
       case 'open-url': if (a.url) openUrl(String(a.url)); break;
       case 'pin': shell.pin(w.app, String(a.url || w.url), String(a.title || w.title)); break;
       case 'update': shell.openApp('sys:appcenter', { app: w.app.id, check: 1 }); break;
     }
+  }
+
+  /** Nachricht einer App an eine andere: an alle offenen Fenster der Ziel-App (bzw. ihrer Suite). */
+  function sendTo(fromWin, target, a, reply) {
+    var from = { id: fromWin.app.id, name: fromWin.app.name, origin: fromWin.app.origin, suite: fromWin.app.pkg ? fromWin.app.pkg.id : null };
+    var wins = WM.wins.filter(function (x) { return !x.app.system && x !== fromWin && Apps.belongs(x.app, target); });
+    var deliver = function (list) {
+      if (!a.request) {
+        list.forEach(function (x) { WM.post(x, 'message', { from: from, data: a.data }, 200); });
+        reply({ delivered: list.length });
+        return;
+      }
+      if (!list.length) { reply({ delivered: 0, error: { name: 'NotFoundError', message: '„' + target.name + '“ ist nicht geöffnet.' } }); return; }
+      WM.post(list[0], 'message', { from: from, data: a.data }, 14000).then(function (r) {
+        reply(r ? Object.assign({ delivered: 1 }, r) : { delivered: 1, error: { name: 'TimeoutError', message: '„' + target.name + '“ hat nicht geantwortet.' } });
+      });
+    };
+    if (wins.length || !a.open) { deliver(wins); return; }
+    // Ziel ist zu: im Hintergrund öffnen und zustellen, sobald es bereit ist.
+    var nw = WM.open(target.apps && target.apps.length ? Apps.get(target.id + '/' + target.apps[0].id) : target, { min: true, focus: false, newWindow: true });
+    whenReady(nw, 10000).then(function () { deliver([nw]); });
+  }
+  function whenReady(w, ms) {
+    return new Promise(function (res) {
+      if (w.ready) { res(); return; }
+      var off = null;
+      var t = setTimeout(function () { if (off) off(); res(); }, ms);
+      off = HX.on('ready', function (x) { if (x === w) { clearTimeout(t); off(); setTimeout(res, 50); } });
+    });
   }
 
   /* ================================================================== Tastatur */

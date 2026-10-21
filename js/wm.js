@@ -104,11 +104,16 @@
    */
   function open(app, o) {
     o = o || {};
-    if (!o.newWindow && !o.url && (app.single || !o.path)) {
+    // Gibt es die App schon im Fenster, wird sie dort geöffnet (neues Fenster nur auf Wunsch).
+    if (!o.newWindow) {
       var ex = WM.ofApp(app.id)[0];
       if (ex) {
-        if (o.path && app.system) navigateSystem(ex, HX.apps.urlFor(app, o.path));
-        restore(ex);
+        if (o.url || o.path) {
+          var to = o.url || HX.apps.urlFor(app, o.path);
+          if (app.system) navigateSystem(ex, to);
+          else post(ex, 'navigate', { url: to }, 100);
+        }
+        if (o.focus !== false) restore(ex);
         return ex;
       }
     }
@@ -390,7 +395,7 @@
       items.push({ label: 'DevTools', icon: 'bug', run: function () { post(w, 'devtools', { show: true }); } });
       items.push({ label: 'Direktlink merken', icon: 'star', run: function () { HX.shell.pin(app, w.url || w.startUrl, w.title); } });
       items.push({ label: 'Auf den Startbildschirm', icon: 'smartphone', run: function () { HX.shell.homeShortcut(app, w.url || w.startUrl, w.title); } });
-      items.push({ label: 'App-Infos', icon: 'info', run: function () { HX.shell.openApp('sys:appcenter', { app: app.id }); } });
+      items.push({ label: 'App-Infos', icon: 'info', run: function () { HX.shell.openApp('sys:appcenter', { app: (app.pkg || app).id }); } });
     } else {
       items.push({ label: 'DevTools', icon: 'bug', run: function () { erudaSystem(w); } });
     }

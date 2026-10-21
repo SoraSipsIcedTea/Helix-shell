@@ -127,3 +127,4 @@ table.kv td:first-child { color: var(--mist); width: 40%; padding-right: 12px; }
 .row .t { flex: 1 1 180px; }
 .nav span.appicon { flex: none; border-radius: 7px; }
 .nav span.appicon span { flex: none; }
+.empty .btn .ic { width: 18px; height: 18px; color: inherit; }

@@ -55,7 +55,6 @@
   var S = { apps: [], view: 'list', app: null, pkg: null };
   document.getElementById('menu').appendChild(icon('panel-left'));
   document.getElementById('menu').addEventListener('click', function () { side.classList.toggle('open'); });
-  var SUITE_LABEL = { aura: 'Aura360', devworks: 'Devworks Studio', cockpit: 'Cockpit' };
   var PERMS = [['fs', 'Dateien', 'Ordner und Dateien lesen und schreiben'], ['geo', 'Standort', 'Wo sich das Gerät befindet'], ['media', 'Kamera und Mikrofon', 'Fotos, Videos, Tonaufnahmen']];
 
   function err(e) { A.alert({ title: 'Das hat nicht geklappt', text: A.errText(e) }); }
@@ -108,7 +107,7 @@
     var p = page('Deine Apps', S.apps.length ? S.apps.length + (S.apps.length === 1 ? ' App installiert' : ' Apps installiert') : 'Noch keine Apps installiert.');
     var g = el('div.group');
     S.apps.forEach(function (a) {
-      var sub = [a.roleLabel, a.version ? 'Version ' + a.version : '', a.source === 'mount' ? 'Ordner „' + (a.folder || '') + '“' : ''].filter(Boolean).join(', ');
+      var sub = [a.apps && a.apps.length ? 'Suite mit ' + a.apps.length + ' Apps' : '', a.version ? 'Version ' + a.version : '', a.source === 'mount' ? 'Ordner „' + (a.folder || '') + '“' : ''].filter(Boolean).join(', ');
       var r = el('div.row.click', { role: 'button', tabindex: '0' }, A.appIcon({ name: a.name, iconUrl: a.icon }, 40),
         el('div.t', null, el('b', { text: a.name }), el('small', { text: sub || 'Installiert' })),
         a.access === false ? el('span.badge.danger', { text: 'Kein Zugriff' }) : a.updateUrl ? el('span.badge', { text: 'Updates' }) : null,
@@ -156,16 +155,12 @@
   }
 
   /* ------------------------------------------------------------ Hinzufügen */
-  function viewAdd(suite) {
+  function viewAdd() {
     noTitle('App hinzufügen');
     var p = page('App hinzufügen', 'Helix installiert Apps aus Paketen oder startet sie direkt aus einem Ordner.');
-    if (suite && SUITE_LABEL[suite]) {
-      p.appendChild(el('div.note-box.teal', null, el('b', { text: SUITE_LABEL[suite] + ' installieren' }),
-        el('p', { text: 'Lade das Paket der Suite herunter (ZIP) und installiere es hier, oder verbinde den Ordner, in dem du sie entwickelst. Helix erkennt die Suite automatisch.' })));
-    }
     p.appendChild(addCards());
     p.appendChild(el('h2', { text: 'Was ist ein Paket?', style: { marginTop: '18px' } }));
-    p.appendChild(el('p.muted', { text: 'Ein ZIP mit einer index.html (und allem, was dazugehört), ein Applanner-Projekt als JSON oder eine einzelne HTML-Datei. Mit einer helix-app.json im Paket legst du Name, Version, Symbol und eine Update-Adresse fest.' }));
+    p.appendChild(el('p.muted', { text: 'Ein ZIP mit einer index.html (und allem, was dazugehört), ein Applanner-Projekt als JSON oder eine einzelne HTML-Datei. Mit einer helix-app.json im Paket legst du Name, Version, Symbol und eine Update-Adresse fest. Listet sie unter „apps“ mehrere Apps, ist das Paket eine Suite: jede App erscheint einzeln im Starter, alle teilen sich ihre Daten.' }));
   }
   function pickPackage(target) {
     A.pickFiles('.zip,.json,.html,.htm,.helix,.lwav,application/zip,application/json,text/html', false).then(function (files) {
@@ -206,7 +201,7 @@
       S.pkg = info;
       noTitle(info.label || 'Paket');
       p = page(info.label || info.sourceName || 'Paket');
-      var meta = [info.kindLabel, info.version ? 'Version ' + info.version : '', info.roleLabel, info.files + ' Dateien', A.fmt.bytes(info.bytes)].filter(Boolean).join(', ');
+      var meta = [info.kindLabel, info.version ? 'Version ' + info.version : '', info.files + ' Dateien', A.fmt.bytes(info.bytes)].filter(Boolean).join(', ');
       p.appendChild(el('p.lead', { text: meta }));
       if (info.from) p.appendChild(el('div.note-box', null, el('b', { text: 'Von „' + info.from + '“ angefordert' }), el('p', { text: 'Eine App möchte dieses Paket installieren. Prüfe das Ziel und die Änderungen, bevor du zustimmst.' })));
       p.appendChild(el('span.label', { text: 'Wohin soll das Paket?' }));
@@ -307,7 +302,7 @@
     var p = page();
     p.appendChild(el('div.hero', null, A.appIcon({ name: a.name, iconUrl: a.icon }, 72), el('div.t', null, el('h1', { text: a.name }),
       el('div.meta', null, a.version ? el('span', { text: 'Version ' + a.version }) : el('span', { text: 'Ohne Versionsangabe' }),
-        a.roleLabel ? el('span.badge.teal', { text: a.roleLabel }) : null,
+        a.apps && a.apps.length ? el('span.badge.teal', { text: 'Suite' }) : null,
         el('span.badge', { text: a.source === 'mount' ? 'Verbundener Ordner' : 'Installiert' })))));
     if (a.access === false) p.appendChild(el('div.note-box.danger', null, el('b', { text: 'Kein Zugriff auf den Ordner' }),
       el('p', { text: 'Android hat die Freigabe für „' + (a.folder || 'den Ordner') + '“ entzogen. Wähle ihn neu aus.' }),
@@ -325,16 +320,23 @@
       A.prompt({ title: 'App umbenennen', value: a.name, ok: 'Umbenennen' }).then(function (v) { if (v && v.trim()) patch(a, { name: v.trim() }); });
     }));
     g.appendChild(setRow('Startseite', a.entry || 'index.html', function (e) { chooseEntry(a, e.currentTarget); }));
-    g.appendChild(setRow('Gehört zur Suite', a.roleLabel || 'Keine', function (e) {
-      var at = e.currentTarget;
-      A.menu([{ label: 'Keine', run: function () { patch(a, { role: '' }); } }].concat(Object.keys(SUITE_LABEL).map(function (r) {
-        return { label: SUITE_LABEL[r], run: function () { patch(a, { role: r }); } };
-      })), at);
-    }));
     g.appendChild(el('div.row', null, el('div.t', null, el('b', { text: 'Adresse' }), el('small.selectable.mono', { text: a.origin }))));
     if (a.updateUrl) g.appendChild(el('div.row', null, el('div.t', null, el('b', { text: 'Update-Adresse' }), el('small.selectable', { text: a.updateUrl, style: { wordBreak: 'break-all' } }))));
     if (a.source === 'mount') g.appendChild(setRow('Ordner', (a.folder || '') + (a.writable === false ? ' (nur lesen)' : ''), function () { remount(a); }, 'Neu wählen'));
     p.appendChild(g);
+
+    // Apps der Suite
+    if (a.apps && a.apps.length) {
+      p.appendChild(el('span.label', { text: 'Apps dieser Suite' }));
+      var gsu = el('div.group');
+      a.apps.forEach(function (s) {
+        var r = el('div.row.click', { role: 'button' }, A.appIcon({ name: s.name, iconUrl: s.icon || a.icon }, 34),
+          el('div.t', null, el('b', { text: s.name }), el('small', { text: s.description || s.path })), icon('chevron-right'));
+        r.addEventListener('click', function () { A.open(a.id + '/' + s.id); });
+        gsu.appendChild(r);
+      });
+      p.appendChild(gsu);
+    }
 
     // Berechtigungen
     p.appendChild(el('span.label', { text: 'Berechtigungen' }));
@@ -491,7 +493,6 @@
       }
       return;
     }
-    if (params.get('suite')) { show('add', params.get('suite')); return; }
     if (params.get('view') === 'desktop') { show('desktop'); return; }
     show('list');
   }

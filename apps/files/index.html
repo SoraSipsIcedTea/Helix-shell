@@ -87,11 +87,13 @@
   tb.append(bSide, bBack, bUp, crumbs, q, bNew, bView, bMore);
 
   /* ------------------------------------------------------------ Orte */
+  var DEVICE_PLACES = [['Download', 'download', 'Download'], ['Kamera', 'image', 'DCIM'], ['Bilder', 'image', 'Pictures'],
+    ['Dokumente', 'file-text', 'Documents'], ['Musik', 'music', 'Music'], ['Filme', 'film', 'Movies']];
   var PLACES = [['Dokumente', 'file-text'], ['Downloads', 'download'], ['Bilder', 'image'], ['Musik', 'music'], ['Videos', 'film']];
   function loadRoots() {
     return fs.roots().then(function (r) { S.roots = r || []; renderSide(); });
   }
-  function rootIcon(r) { return r.kind === 'internal' ? 'house' : r.kind === 'device' ? 'smartphone' : r.kind === 'apps' ? 'package' : r.kind === 'app' ? 'app-window' : 'folder'; }
+  function rootIcon(r) { return r.kind === 'internal' ? 'house' : r.kind === 'device' ? 'smartphone' : r.kind === 'removable' ? 'hard-drive' : r.kind === 'apps' ? 'package' : r.kind === 'app' ? 'app-window' : 'folder'; }
   function renderSide() {
     A.clear(side);
     var nav = function (label, ic, root, path, extra) {
@@ -101,17 +103,20 @@
       side.appendChild(b);
       return b;
     };
-    side.appendChild(el('h3', { text: 'Orte' }));
+    var dev = S.roots.filter(function (r) { return r.kind === 'device' || r.kind === 'removable'; });
+    var trees = S.roots.filter(function (r) { return r.kind === 'folder'; });
+    if (dev.length) {
+      side.appendChild(el('h3', { text: 'Gerät' }));
+      dev.forEach(function (r) {
+        nav(r.name, r.kind === 'removable' ? 'hard-drive' : 'smartphone', r.id, '', r.locked ? icon('lock') : null);
+        if (r.kind === 'device' && !r.locked) DEVICE_PLACES.forEach(function (p) { nav(p[0], p[1], r.id, p[2]); });
+      });
+    }
+    side.appendChild(el('h3', { text: 'Helix' }));
     var home = S.roots.filter(function (r) { return r.id === 'home'; })[0];
     if (home) {
       nav('Persönlicher Ordner', 'house', 'home', '');
       PLACES.forEach(function (p) { nav(p[0], p[1], 'home', p[0]); });
-    }
-    var dev = S.roots.filter(function (r) { return r.kind === 'device'; });
-    var trees = S.roots.filter(function (r) { return r.kind === 'tree'; });
-    if (dev.length) {
-      side.appendChild(el('h3', { text: 'Gerät' }));
-      dev.forEach(function (r) { nav(r.name, 'smartphone', r.id, ''); });
     }
     side.appendChild(el('h3', { text: 'Verbundene Ordner' }));
     trees.forEach(function (r) {
@@ -138,10 +143,17 @@
       side.appendChild(el('h3', { text: 'System' }));
       sys.forEach(function (r) { nav(r.name, rootIcon(r), r.id, ''); });
     }
-    if (!dev.length && window.Helix && !window.Helix.dev) {
-      side.appendChild(el('h3', { text: 'Gerät' }));
-      side.appendChild(el('button.nav', { type: 'button', onclick: function () { A.open('sys:settings', { page: 'storage' }); } }, icon('shield'), el('span', { text: 'Gerätespeicher freigeben' })));
-    }
+  }
+  /** Gerätespeicher noch gesperrt: erklären und die Freigabe von Android anfordern. */
+  function locked() {
+    status.textContent = '';
+    A.clear(content).appendChild(el('div.empty', null, icon('lock'),
+      el('b', { text: 'Zugriff auf den Gerätespeicher erlauben' }),
+      el('span', { style: { maxWidth: '420px' }, text: 'Damit Dateien deinen Download-Ordner, Fotos und Dokumente zeigen kann, braucht Helix von Android die Berechtigung „Zugriff auf alle Dateien“. Android öffnet dafür gleich die Einstellungen; schalte Helix 2 dort ein und komm zurück.' }),
+      el('button.btn.primary', { type: 'button', onclick: function () {
+        A.api('/api/system/all-files', { method: 'POST' }).catch(err);
+      } }, icon('shield'), 'Zugriff erlauben'),
+      el('button.btn.ghost', { type: 'button', text: 'Stattdessen einen Ordner verbinden', onclick: connect })));
   }
   function rootName(id) { var r = S.roots.filter(function (x) { return x.id === id; })[0]; return r ? (id === 'home' ? 'Persönlicher Ordner' : r.name) : id; }
   function connect() {
@@ -185,6 +197,7 @@
     }).catch(function (e) {
       if (my !== loadSeq) return;
       S.entries = [];
+      if (e.code === 'no_storage_access') { locked(); return; }
       A.clear(content).appendChild(el('div.empty', null, icon('triangle-alert'), el('b', { text: 'Ordner lässt sich nicht öffnen' }), el('span', { text: A.errText(e) }),
         S.root.indexOf('t') === 0 ? el('button.btn', { type: 'button', text: 'Zugriff erneut erlauben', onclick: connect }) : null));
       status.textContent = '';
@@ -398,10 +411,14 @@
       { label: 'Neu laden', icon: 'refresh-cw', run: load }
     ], { x: ev.clientX, y: ev.clientY });
   });
-  A.on('native:storage', function () { loadRoots(); });
+  A.on('native:storage', function () { loadRoots().then(load); });
 
   if (!fs) { content.appendChild(el('div.empty', null, icon('server'), el('b', { text: 'Kein Helix-Server' }), el('span', { text: 'Dateien gibt es nur in der Helix-App.' }))); return; }
-  loadRoots().then(load, function (e) { err(e); load(); });
+  loadRoots().then(function () {
+    // Ohne Angabe startet Dateien im Gerätespeicher – gesperrt zeigt es, wie man ihn freigibt.
+    if (!A.params.get('root') && S.roots.some(function (r) { return r.id === 'device'; })) S.root = 'device';
+    load();
+  }, function (e) { err(e); load(); });
 })();
 </script>
 </body>
