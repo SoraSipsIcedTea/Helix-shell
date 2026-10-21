@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>App-Center</title>
+<link rel="stylesheet" href="../lib/app.css">
+<style>
+  .hero { display: flex; gap: 16px; align-items: center; margin-bottom: 18px; }
+  .hero .appicon { width: 72px; height: 72px; border-radius: 22px; }
+  .hero .t { flex: 1; min-width: 0; }
+  .hero h1 { overflow: hidden; text-overflow: ellipsis; }
+  .hero .meta { color: var(--mist); margin-top: 2px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin: 12px 0 6px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin: 12px 0; }
+  .card { display: flex; flex-direction: column; gap: 8px; padding: 16px; border-radius: var(--r-m); border: 1px solid var(--line); background: var(--abyss); cursor: pointer; text-align: left; }
+  .card:hover { border-color: var(--teal); }
+  .card .ic { width: 26px; height: 26px; color: var(--teal); }
+  .card b { font-family: var(--font-display); font-weight: 500; font-size: 15px; }
+  .card span { color: var(--mist); font-size: 13px; }
+  .target { display: flex; align-items: center; gap: 12px; padding: 10px 14px; cursor: pointer; min-height: 56px; }
+  .target + .target { border-top: 1px solid var(--line); }
+  .target input { accent-color: var(--teal); width: 18px; height: 18px; flex: none; }
+  .target .appicon { width: 34px; height: 34px; border-radius: 10px; }
+  .target .t { flex: 1; min-width: 0; }
+  .target .t small { color: var(--mist); display: block; font-size: 12px; }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin: 12px 0; }
+  .stat { padding: 12px 14px; border-radius: var(--r-m); background: var(--abyss); border: 1px solid var(--line); }
+  .stat b { display: block; font-family: var(--font-display); font-weight: 500; font-size: 22px; }
+  .stat span { color: var(--mist); font-size: 12px; }
+  details { margin: 6px 0; }
+  details summary { cursor: pointer; color: var(--mist); padding: 6px 0; }
+  details pre { max-height: 220px; overflow: auto; margin: 6px 0; padding: 10px; border-radius: var(--r-s); background: var(--abyss); font: 12px/1.5 var(--font-mono); user-select: text; }
+  .busy { display: flex; align-items: center; gap: 12px; padding: 30px 0; color: var(--mist); }
+  .vers { font-family: var(--font-display); font-size: 15px; }
+  .vers .ic { width: 16px; height: 16px; color: var(--mist); margin: 0 6px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="toolbar only-narrow"><button class="icon-btn" id="menu" type="button" aria-label="Navigation"></button><b id="tbt" style="font-family:var(--font-display);font-weight:500">App-Center</b></div>
+  <div class="app-main" style="position:relative">
+    <aside class="side collapsible" id="side"></aside>
+    <div class="content" id="content"></div>
+  </div>
+</div>
+<script src="../lib/app.js"></script>
+<script>
+(function () {
+  'use strict';
+  var el = A.el, icon = A.icon;
+  var side = document.getElementById('side'), content = document.getElementById('content');
+  var S = { apps: [], view: 'list', app: null, pkg: null };
+  document.getElementById('menu').appendChild(icon('panel-left'));
+  document.getElementById('menu').addEventListener('click', function () { side.classList.toggle('open'); });
+  var SUITE_LABEL = { aura: 'Aura360', devworks: 'Devworks Studio', cockpit: 'Cockpit' };
+  var PERMS = [['fs', 'Dateien', 'Ordner und Dateien lesen und schreiben'], ['geo', 'Standort', 'Wo sich das Gerät befindet'], ['media', 'Kamera und Mikrofon', 'Fotos, Videos, Tonaufnahmen']];
+
+  function err(e) { A.alert({ title: 'Das hat nicht geklappt', text: A.errText(e) }); }
+  function busy(text) { return el('div.busy', null, el('div.spinner'), el('span', { text: text })); }
+  function page(title, lead) {
+    var p = el('div.page');
+    if (title) p.appendChild(el('h1', { text: title }));
+    if (lead) p.appendChild(el('p.lead', { text: lead }));
+    A.clear(content).appendChild(p);
+    content.scrollTop = 0;
+    return p;
+  }
+
+  /* ------------------------------------------------------------ Navigation */
+  function loadApps() { return A.api('/api/apps').then(function (l) { S.apps = l || []; renderSide(); }); }
+  function renderSide() {
+    A.clear(side);
+    var nav = function (label, ic, view, arg, extra) {
+      var cur = S.view === view && (arg == null || S.app === arg);
+      var b = el('button.nav', { type: 'button', 'aria-current': String(cur) }, ic.nodeType ? ic : icon(ic), el('span', { text: label }), extra || null);
+      b.addEventListener('click', function () { side.classList.remove('open'); show(view, arg); });
+      side.appendChild(b);
+    };
+    nav('Übersicht', 'layout-grid', 'list');
+    nav('App hinzufügen', 'package-plus', 'add');
+    nav('Helix-Desktop', 'monitor', 'desktop');
+    if (S.apps.length) side.appendChild(el('h3', { text: 'Installiert' }));
+    S.apps.forEach(function (a) {
+      nav(a.name, A.appIcon({ name: a.name, iconUrl: a.icon }, 22), 'app', a.id, a.access === false ? el('span.badge.danger', { text: '!' }) : null);
+    });
+  }
+  function show(view, arg) {
+    S.view = view; S.app = view === 'app' ? arg : null;
+    renderSide();
+    document.getElementById('tbt').textContent = 'App-Center';
+    if (view === 'list') return viewList();
+    if (view === 'add') return viewAdd(arg);
+    if (view === 'desktop') return viewDesktop();
+    if (view === 'app') return viewApp(arg);
+    if (view === 'package') return viewPackage(arg);
+  }
+  A.onBack(function () {
+    if (side.classList.contains('open')) { side.classList.remove('open'); return true; }
+    if (S.view !== 'list') { show('list'); return true; }
+    return false;
+  });
+
+  /* ------------------------------------------------------------ Übersicht */
+  function viewList() {
+    A.setTitle('App-Center');
+    var p = page('Deine Apps', S.apps.length ? S.apps.length + (S.apps.length === 1 ? ' App installiert' : ' Apps installiert') : 'Noch keine Apps installiert.');
+    var g = el('div.group');
+    S.apps.forEach(function (a) {
+      var sub = [a.roleLabel, a.version ? 'Version ' + a.version : '', a.source === 'mount' ? 'Ordner „' + (a.folder || '') + '“' : ''].filter(Boolean).join(', ');
+      var r = el('div.row.click', { role: 'button', tabindex: '0' }, A.appIcon({ name: a.name, iconUrl: a.icon }, 40),
+        el('div.t', null, el('b', { text: a.name }), el('small', { text: sub || 'Installiert' })),
+        a.access === false ? el('span.badge.danger', { text: 'Kein Zugriff' }) : a.updateUrl ? el('span.badge', { text: 'Updates' }) : null,
+        icon('chevron-right'));
+      r.addEventListener('click', function () { show('app', a.id); });
+      g.appendChild(r);
+    });
+    if (S.apps.length) p.appendChild(g);
+    p.appendChild(el('h2', { text: 'Hinzufügen', style: { marginTop: '22px' } }));
+    p.appendChild(addCards());
+    var withUpd = S.apps.filter(function (a) { return a.updateUrl; });
+    if (withUpd.length) {
+      p.appendChild(el('div.actions', null, el('button.btn', { type: 'button', onclick: function () { checkAll(withUpd); } }, icon('refresh-cw'), 'Alle Apps auf Updates prüfen')));
+    }
+  }
+  function addCards() {
+    var cards = el('div.cards');
+    var card = function (ic, title, text, run) { var c = el('button.card', { type: 'button', onclick: run }, icon(ic), el('b', { text: title }), el('span', { text: text })); cards.appendChild(c); };
+    card('upload', 'Paket installieren', 'ZIP, Applanner-Projekt (.json) oder eine einzelne HTML-Datei', pickPackage);
+    card('globe', 'Aus dem Netz laden', 'Adresse eines Pakets, zum Beispiel ein GitHub-ZIP', fromUrl);
+    card('folder-plus', 'Ordner verbinden', 'Eine App aus einem Ordner starten, den du selbst pflegst', mount);
+    return cards;
+  }
+  function checkAll(list) {
+    var p = page('Nach Updates suchen');
+    var g = el('div.group'); p.appendChild(g);
+    var i = 0;
+    var next = function () {
+      if (i >= list.length) return;
+      var a = list[i++];
+      var r = el('div.row', null, A.appIcon({ name: a.name, iconUrl: a.icon }, 34), el('div.t', null, el('b', { text: a.name }), el('small', { text: 'Wird geprüft …' })));
+      g.appendChild(r);
+      A.api('/api/packages/fetch', { method: 'POST', json: { url: a.updateUrl } }).then(function (info) {
+        return A.api('/api/packages/' + info.id + '/plan?target=' + encodeURIComponent(a.id)).then(function (plan) {
+          var sm = r.querySelector('small');
+          if (plan.nothingToDo) { sm.textContent = 'Aktuell' + (a.version ? ' (' + a.version + ')' : ''); A.api('/api/packages/' + info.id, { method: 'DELETE' }).catch(function () { }); }
+          else {
+            sm.textContent = (plan.from || '?') + ' auf ' + (plan.to || 'neu') + ': ' + (plan.changedCount + plan.addedCount) + ' Dateien';
+            r.appendChild(el('button.btn.primary', { type: 'button', text: 'Ansehen', onclick: function () { S.pkgTarget = a.id; show('package', info.id); } }));
+          }
+        });
+      }).catch(function (e) { r.querySelector('small').textContent = A.errText(e); }).then(next);
+    };
+    next();
+  }
+
+  /* ------------------------------------------------------------ Hinzufügen */
+  function viewAdd(suite) {
+    A.setTitle('App hinzufügen');
+    var p = page('App hinzufügen', 'Helix installiert Apps aus Paketen oder startet sie direkt aus einem Ordner.');
+    if (suite && SUITE_LABEL[suite]) {
+      p.appendChild(el('div.note-box.teal', null, el('b', { text: SUITE_LABEL[suite] + ' installieren' }),
+        el('p', { text: 'Lade das Paket der Suite herunter (ZIP) und installiere es hier, oder verbinde den Ordner, in dem du sie entwickelst. Helix erkennt die Suite automatisch.' })));
+    }
+    p.appendChild(addCards());
+    p.appendChild(el('h2', { text: 'Was ist ein Paket?', style: { marginTop: '18px' } }));
+    p.appendChild(el('p.muted', { text: 'Ein ZIP mit einer index.html (und allem, was dazugehört), ein Applanner-Projekt als JSON oder eine einzelne HTML-Datei. Mit einer helix-app.json im Paket legst du Name, Version, Symbol und eine Update-Adresse fest.' }));
+  }
+  function pickPackage(target) {
+    A.pickFiles('.zip,.json,.html,.htm,.helix,.lwav,application/zip,application/json,text/html', false).then(function (files) {
+      if (!files[0]) return;
+      stage(files[0], files[0].name, typeof target === 'string' ? target : null);
+    });
+  }
+  function stage(blob, name, target) {
+    var p = page('Paket wird gelesen'); p.appendChild(busy(name));
+    return A.api('/api/packages?name=' + encodeURIComponent(name), { method: 'POST', body: blob }).then(function (info) {
+      S.pkgTarget = target || null;
+      show('package', info.id);
+    }).catch(function (e) { err(e); show('add'); });
+  }
+  function fromUrl(target, url) {
+    var go = function (u) {
+      if (!u || !u.trim()) return;
+      var p = page('Paket wird geladen'); p.appendChild(busy(u.trim()));
+      A.api('/api/packages/fetch', { method: 'POST', json: { url: u.trim() } }).then(function (info) {
+        S.pkgTarget = typeof target === 'string' ? target : null;
+        show('package', info.id);
+      }).catch(function (e) { err(e); show(typeof target === 'string' ? 'app' : 'add', typeof target === 'string' ? target : undefined); });
+    };
+    if (url) { go(url); return; }
+    A.prompt({ title: 'Paket aus dem Netz', text: 'Adresse des Pakets (https://…)', placeholder: 'https://github.com/…/archive/refs/heads/main.zip', ok: 'Laden' }).then(go);
+  }
+  function mount() {
+    A.api('/api/apps/mount', { method: 'POST' }).then(function (r) {
+      if (!r || r.cancelled) return;
+      return loadApps().then(function () { A.toast('„' + r.app.name + '“ verbunden'); show('app', r.app.id); });
+    }).catch(err);
+  }
+
+  /* ------------------------------------------------------------ Paket: Ziel wählen, Vorschau, Anwenden */
+  function viewPackage(pid) {
+    var p = page('Paket installieren'); p.appendChild(busy('Paket wird geprüft …'));
+    A.api('/api/packages/' + encodeURIComponent(pid)).then(function (info) {
+      S.pkg = info;
+      A.setTitle(info.label || 'Paket');
+      p = page(info.label || info.sourceName || 'Paket');
+      var meta = [info.kindLabel, info.version ? 'Version ' + info.version : '', info.roleLabel, info.files + ' Dateien', A.fmt.bytes(info.bytes)].filter(Boolean).join(', ');
+      p.appendChild(el('p.lead', { text: meta }));
+      if (info.from) p.appendChild(el('div.note-box', null, el('b', { text: 'Von „' + info.from + '“ angefordert' }), el('p', { text: 'Eine App möchte dieses Paket installieren. Prüfe das Ziel und die Änderungen, bevor du zustimmst.' })));
+      p.appendChild(el('span.label', { text: 'Wohin soll das Paket?' }));
+      var g = el('div.group'), chosen = S.pkgTarget || info.best || (info.targets[0] && info.targets[0].score > 0 ? info.targets[0].id : 'new');
+      var opt = function (id, look, title, sub) {
+        var r = el('label.target', null, el('input', { type: 'radio', name: 'tg', value: id, checked: id === chosen }), look, el('span.t', null, el('b', { text: title }), sub ? el('small', { text: sub }) : null));
+        r.querySelector('input').addEventListener('change', function () { chosen = id; });
+        g.appendChild(r);
+      };
+      info.targets.forEach(function (t) {
+        var isDesk = t.id === 'desktop';
+        opt(t.id, A.appIcon(isDesk ? { glyph: 'monitor', colors: ['#2DD4BF', '#0E6F66'] } : { name: t.name, iconUrl: t.icon }, 34),
+          (isDesk ? 'Helix-Desktop aktualisieren' : t.name + ' aktualisieren'), (t.version ? 'Installiert: ' + t.version : '') + (t.id === info.best ? (t.version ? ', ' : '') + 'passt am besten' : ''));
+      });
+      opt('new', A.appIcon({ glyph: 'plus', colors: ['#F6C08C', '#B66A2C'] }, 34), 'Als neue App installieren', 'Im App-Speicher von Helix');
+      opt('new-folder', A.appIcon({ glyph: 'folder-plus', colors: ['#7DA2FF', '#3550B8'] }, 34), 'Als neue App in einen Ordner', 'Du wählst den Ordner, Helix entpackt dorthin und verbindet ihn');
+      p.appendChild(g);
+      if (info.ignored && info.ignored.length) p.appendChild(el('details', null, el('summary', { text: info.ignored.length + ' Dateien werden übersprungen' }), el('pre', { text: info.ignored.join('\n') })));
+      p.appendChild(el('div.actions', null,
+        el('button.btn.primary', { type: 'button', onclick: function () { plan(info, chosen); } }, 'Änderungen ansehen'),
+        el('button.btn.ghost', { type: 'button', text: 'Verwerfen', onclick: function () { A.api('/api/packages/' + info.id, { method: 'DELETE' }).catch(function () { }); show('list'); } })));
+    }).catch(function (e) {
+      p = page('Paket nicht mehr da', 'Bereitgelegte Pakete verfallen nach 30 Minuten. Installiere es bitte noch einmal.');
+      p.appendChild(el('p.muted', { text: A.errText(e) }));
+      p.appendChild(addCards());
+    });
+  }
+  function plan(info, target) {
+    if (target === 'new' || target === 'new-folder') return planNew(info, target);
+    var p = page('Vorschau'); p.appendChild(busy('Änderungen werden berechnet …'));
+    A.api('/api/packages/' + info.id + '/plan?target=' + encodeURIComponent(target)).then(function (pl) {
+      p = page(pl.targetName || 'Vorschau');
+      p.appendChild(el('div.vers', null, pl.from || 'unbekannt', icon('chevron-right'), pl.to || 'unbekannt'));
+      if (pl.warning) p.appendChild(el('div.note-box.danger', null, el('b', { text: 'Passt das?' }), el('p', { text: pl.warning })));
+      if (pl.nothingToDo) p.appendChild(el('div.note-box.teal', null, el('b', { text: 'Schon aktuell' }), el('p', { text: 'Alle Dateien sind identisch. Es gibt nichts zu tun.' })));
+      p.appendChild(el('div.stats', null,
+        stat(pl.changedCount, 'geändert'), stat(pl.addedCount, 'neu'), stat(pl.same, 'unverändert'), stat(pl.removable.length, 'nicht mehr im Paket')));
+      if (pl.changed.length) p.appendChild(el('details', null, el('summary', { text: 'Geänderte Dateien' }), el('pre', { text: pl.changed.join('\n') })));
+      if (pl.added.length) p.appendChild(el('details', null, el('summary', { text: 'Neue Dateien' }), el('pre', { text: pl.added.join('\n') })));
+      var rm = null;
+      if (pl.removable.length) {
+        rm = el('input', { type: 'checkbox' });
+        p.appendChild(el('div.group', null, el('label.row', { style: { cursor: 'pointer' } }, el('div.t', null, el('b', { text: 'Nicht mehr enthaltene Dateien löschen' }),
+          el('small', { text: pl.removable.length + ' Dateien. Ohne Haken bleiben sie liegen.' })), A.toggle(false, function (v) { rm.checked = v; }))));
+        p.appendChild(el('details', null, el('summary', { text: 'Nicht mehr im Paket' }), el('pre', { text: pl.removable.join('\n') })));
+      }
+      if (pl.kept) p.appendChild(el('p.muted.small', { text: pl.kept + ' Dateien bleiben laut helix-app.json („keep“) unangetastet.' }));
+      p.appendChild(el('p.muted.small', { text: 'Vorher legt Helix eine Sicherung an. Im App-Center kannst du jederzeit zurück.', style: { marginTop: '10px' } }));
+      p.appendChild(el('div.actions', null,
+        el('button.btn.primary', { type: 'button', disabled: pl.nothingToDo, onclick: function () { apply(info, target, { removeMissing: rm && rm.checked ? 1 : '' }); } }, icon('download'), 'Installieren'),
+        el('button.btn.ghost', { type: 'button', text: 'Anderes Ziel', onclick: function () { S.pkgTarget = null; show('package', info.id); } })));
+    }).catch(function (e) { err(e); show('package', info.id); });
+  }
+  function stat(n, label) { return el('div.stat', null, el('b', { text: String(n) }), el('span', { text: label })); }
+  function planNew(info, target) {
+    var p = page(target === 'new' ? 'Neue App' : 'Neue App in einem Ordner');
+    var nameIn = el('input.field', { value: info.label || '', placeholder: 'Name' });
+    p.appendChild(el('span.label', { text: 'Name' }));
+    p.appendChild(nameIn);
+    if (target === 'new-folder') p.appendChild(el('p.muted', { text: 'Im nächsten Schritt wählst du einen leeren Ordner. Helix entpackt das Paket dorthin und startet die App von dort.', style: { marginTop: '10px' } }));
+    p.appendChild(el('div.actions', null,
+      el('button.btn.primary', { type: 'button', onclick: function () { apply(info, target, { name: nameIn.value.trim() }); } }, icon('download'), target === 'new' ? 'Installieren' : 'Ordner wählen und installieren'),
+      el('button.btn.ghost', { type: 'button', text: 'Zurück', onclick: function () { show('package', info.id); } })));
+  }
+  function apply(info, target, extra) {
+    var p = page('Wird installiert'); p.appendChild(busy(info.label || ''));
+    var qs = new URLSearchParams({ target: target });
+    for (var k in extra) if (extra[k]) qs.set(k, extra[k]);
+    A.api('/api/packages/' + info.id + '/apply?' + qs, { method: 'POST' }).then(function (r) {
+      if (r.cancelled) { show('package', info.id); return; }
+      S.pkgTarget = null;
+      return loadApps().then(function () { done(r); });
+    }).catch(function (e) { err(e); show('package', info.id); });
+  }
+  function done(r) {
+    if (A.HX) A.HX.apps.refresh();
+    var p = page(r.ok ? 'Fertig' : 'Mit Fehlern fertig');
+    p.appendChild(el('p.lead', { text: r.written + ' Dateien geschrieben' + (r.deleted ? ', ' + r.deleted + ' gelöscht' : '') + (r.backup ? '. Sicherung angelegt.' : '.') }));
+    if (r.errors.length) p.appendChild(el('details', { open: true }, el('summary', { text: r.errors.length + ' Fehler' }), el('pre', { text: r.errors.join('\n') })));
+    var act = el('div.actions');
+    if (r.desktop) {
+      p.appendChild(el('div.note-box.teal', null, el('b', { text: 'Der Desktop wurde aktualisiert' }), el('p', { text: 'Lade ihn neu, um die neue Version zu starten. Deine Fenster kommen wieder.' })));
+      act.appendChild(el('button.btn.primary', { type: 'button', onclick: function () { A.HX.shell.reload(); } }, icon('refresh-cw'), 'Desktop neu laden'));
+    } else if (r.app) {
+      act.appendChild(el('button.btn.primary', { type: 'button', onclick: function () { A.open(r.app.id); } }, icon('app-window'), '„' + r.app.name + '“ öffnen'));
+      act.appendChild(el('button.btn', { type: 'button', text: 'App-Infos', onclick: function () { show('app', r.app.id); } }));
+      A.HX.wm.ofApp(r.app.id).forEach(function (w) { A.HX.wm.reload(w); });
+    }
+    act.appendChild(el('button.btn.ghost', { type: 'button', text: 'Zur Übersicht', onclick: function () { show('list'); } }));
+    p.appendChild(act);
+  }
+
+  /* ------------------------------------------------------------ Eine App */
+  function viewApp(id) {
+    var a = S.apps.filter(function (x) { return x.id === id; })[0];
+    if (!a) { show('list'); return; }
+    A.setTitle(a.name);
+    var p = page();
+    p.appendChild(el('div.hero', null, A.appIcon({ name: a.name, iconUrl: a.icon }, 72), el('div.t', null, el('h1', { text: a.name }),
+      el('div.meta', null, a.version ? el('span', { text: 'Version ' + a.version }) : el('span', { text: 'Ohne Versionsangabe' }),
+        a.roleLabel ? el('span.badge.teal', { text: a.roleLabel }) : null,
+        el('span.badge', { text: a.source === 'mount' ? 'Verbundener Ordner' : 'Installiert' })))));
+    if (a.access === false) p.appendChild(el('div.note-box.danger', null, el('b', { text: 'Kein Zugriff auf den Ordner' }),
+      el('p', { text: 'Android hat die Freigabe für „' + (a.folder || 'den Ordner') + '“ entzogen. Wähle ihn neu aus.' }),
+      el('button.btn', { type: 'button', style: { marginTop: '8px' }, text: 'Ordner neu wählen', onclick: function () { remount(a); } })));
+    var act = el('div.actions');
+    act.appendChild(el('button.btn.primary', { type: 'button', onclick: function () { A.open(a.id); } }, icon('app-window'), 'Öffnen'));
+    if (a.updateUrl) act.appendChild(el('button.btn', { type: 'button', onclick: function () { fromUrl(a.id, a.updateUrl); } }, icon('refresh-cw'), 'Nach Update suchen'));
+    act.appendChild(el('button.btn', { type: 'button', onclick: function () { pickPackage(a.id); } }, icon('upload'), 'Paket einspielen'));
+    p.appendChild(act);
+
+    // Allgemein
+    p.appendChild(el('span.label', { text: 'Allgemein' }));
+    var g = el('div.group');
+    g.appendChild(setRow('Name', a.name, function () {
+      A.prompt({ title: 'App umbenennen', value: a.name, ok: 'Umbenennen' }).then(function (v) { if (v && v.trim()) patch(a, { name: v.trim() }); });
+    }));
+    g.appendChild(setRow('Startseite', a.entry || 'index.html', function (e) { chooseEntry(a, e.currentTarget); }));
+    g.appendChild(setRow('Gehört zur Suite', a.roleLabel || 'Keine', function (e) {
+      var at = e.currentTarget;
+      A.menu([{ label: 'Keine', run: function () { patch(a, { role: '' }); } }].concat(Object.keys(SUITE_LABEL).map(function (r) {
+        return { label: SUITE_LABEL[r], run: function () { patch(a, { role: r }); } };
+      })), at);
+    }));
+    g.appendChild(el('div.row', null, el('div.t', null, el('b', { text: 'Adresse' }), el('small.selectable.mono', { text: a.origin }))));
+    if (a.updateUrl) g.appendChild(el('div.row', null, el('div.t', null, el('b', { text: 'Update-Adresse' }), el('small.selectable', { text: a.updateUrl, style: { wordBreak: 'break-all' } }))));
+    if (a.source === 'mount') g.appendChild(setRow('Ordner', (a.folder || '') + (a.writable === false ? ' (nur lesen)' : ''), function () { remount(a); }, 'Neu wählen'));
+    p.appendChild(g);
+
+    // Berechtigungen
+    p.appendChild(el('span.label', { text: 'Berechtigungen' }));
+    var gp = el('div.group');
+    PERMS.forEach(function (pm) {
+      var cur = (a.perms && a.perms[pm[0]]) || 'ask';
+      gp.appendChild(el('div.row', null, el('div.t', null, el('b', { text: pm[1] }), el('small', { text: pm[2] })),
+        A.seg([['ask', 'Fragen'], ['allow', 'Erlauben'], ['deny', 'Nein']], cur, function (v) { var o = {}; o[pm[0]] = v; patch(a, { perms: o }, true); })));
+    });
+    p.appendChild(gp);
+
+    // Direktlinks
+    p.appendChild(el('span.label', { text: 'Direktlinks' }));
+    var gs = el('div.group');
+    var sc = a.userShortcuts && a.userShortcuts.length ? a.userShortcuts : a.shortcuts || [];
+    if (!sc.length) gs.appendChild(el('div.row', null, el('div.t', null, el('small', { text: 'Diese App hat keine Direktlinks. Apps können welche anbieten, du kannst auch eigene anlegen.' }))));
+    sc.forEach(function (s, i) {
+      gs.appendChild(el('div.row', null, el('div.t', null, el('b', { text: s.name }), el('small.mono', { text: s.path })),
+        el('button.icon-btn', { type: 'button', 'aria-label': 'Auf den Startbildschirm', title: 'Auf den Startbildschirm', onclick: function () { A.HX.shell.homeShortcut(appRec(a), a.origin + '/' + s.path, s.name); } }, icon('smartphone')),
+        el('button.icon-btn', { type: 'button', 'aria-label': 'Entfernen', onclick: function () {
+          var list = sc.slice(); list.splice(i, 1);
+          patch(a, { userShortcuts: list.map(function (x) { return { name: x.name, path: x.path }; }) });
+        } }, icon('x'))));
+    });
+    gs.appendChild(el('div.row.click', { role: 'button', onclick: function () { addShortcut(a, sc); } }, icon('plus'), el('div.t', null, el('b', { text: 'Direktlink hinzufügen' }))));
+    p.appendChild(gs);
+
+    // Sicherungen
+    p.appendChild(el('span.label', { text: 'Sicherungen' }));
+    var gb = el('div.group');
+    gb.appendChild(el('div.row', null, el('div.t', null, el('small', { text: a.backups ? 'Wird geladen …' : 'Noch keine. Helix legt vor jedem Update eine an.' }))));
+    p.appendChild(gb);
+    if (a.backups) backups('/api/apps/' + encodeURIComponent(a.id), gb, function () { loadApps().then(function () { show('app', a.id); }); });
+
+    // Entfernen
+    p.appendChild(el('div.actions', { style: { marginTop: '22px' } },
+      el('button.btn.danger', { type: 'button', onclick: function () { removeApp(a); } }, icon(a.source === 'mount' ? 'unlink' : 'trash-2'), a.source === 'mount' ? 'Ordner trennen' : 'Deinstallieren')));
+  }
+  function appRec(a) { return A.HX.apps.get(a.id) || { id: a.id, name: a.name, origin: a.origin }; }
+  function setRow(label, value, run, btn) {
+    return el('div.row', null, el('div.t', null, el('b', { text: label }), el('small', { text: value })),
+      el('button.btn.ghost', { type: 'button', text: btn || 'Ändern', onclick: run }));
+  }
+  function patch(a, body, quiet) {
+    return A.api('/api/apps/' + encodeURIComponent(a.id), { method: 'PATCH', json: body }).then(function () {
+      if (!quiet) A.toast('Gespeichert');
+      return loadApps().then(function () { if (!quiet) show('app', a.id); });
+    }).catch(err);
+  }
+  function chooseEntry(a, at) {
+    A.api('/api/apps/' + encodeURIComponent(a.id) + '/html').then(function (list) {
+      if (!list.length) { A.toast('Keine HTML-Dateien gefunden'); return; }
+      A.menu([{ head: 'Startseite wählen' }].concat(list.slice(0, 30).map(function (h) {
+        return { label: h, icon: h === (a.entry || 'index.html') ? 'check' : 'file', run: function () { patch(a, { entry: h === 'index.html' ? '' : h }); } };
+      })), at);
+    }).catch(err);
+  }
+  function addShortcut(a, current) {
+    A.prompt({ title: 'Direktlink', text: 'Name des Direktlinks', ok: 'Weiter' }).then(function (n) {
+      if (!n || !n.trim()) return;
+      A.prompt({ title: 'Direktlink', text: 'Seite in der App, zum Beispiel index.html#notizen', value: 'index.html', ok: 'Hinzufügen' }).then(function (p) {
+        if (!p || !p.trim()) return;
+        var list = current.map(function (x) { return { name: x.name, path: x.path }; });
+        list.push({ name: n.trim(), path: p.trim().replace(/^\/+/, '') });
+        patch(a, { userShortcuts: list });
+      });
+    });
+  }
+  function remount(a) {
+    A.api('/api/apps/' + encodeURIComponent(a.id) + '/remount', { method: 'POST' }).then(function (r) {
+      if (r && r.cancelled) return;
+      A.toast('Ordner neu verbunden');
+      return loadApps().then(function () { show('app', a.id); });
+    }).catch(err);
+  }
+  function removeApp(a) {
+    var mount = a.source === 'mount';
+    A.confirm({ title: mount ? '„' + a.name + '“ trennen?' : '„' + a.name + '“ deinstallieren?',
+      text: mount ? 'Der Ordner und seine Dateien bleiben erhalten. Helix vergisst nur die App.' : 'Die App und ihre Dateien im App-Speicher werden gelöscht. Daten, die die App im Browser-Speicher abgelegt hat, sind dann ebenfalls weg.',
+      ok: mount ? 'Trennen' : 'Deinstallieren', danger: true }).then(function (ok) {
+      if (!ok) return;
+      A.HX.wm.ofApp(a.id).forEach(function (w) { A.HX.wm.close(w, true); });
+      A.api('/api/apps/' + encodeURIComponent(a.id) + (mount ? '?release=1' : ''), { method: 'DELETE' }).then(function () {
+        A.toast(mount ? 'Getrennt' : 'Deinstalliert');
+        return loadApps().then(function () { show('list'); });
+      }).catch(err);
+    });
+  }
+  function backups(base, box, after) {
+    A.api(base + '/backups').then(function (list) {
+      A.clear(box);
+      if (!list.length) { box.appendChild(el('div.row', null, el('div.t', null, el('small', { text: 'Keine Sicherungen' })))); return; }
+      list.forEach(function (b) {
+        var t = b.broken ? 'Beschädigt' : (b.from || '?') + ' auf ' + (b.to || '?');
+        box.appendChild(el('div.row', null, el('div.t', null, el('b', { text: A.fmt.date(b.created) || b.name }), el('small', { text: t + ', ' + A.fmt.bytes(b.size) })),
+          b.broken ? null : el('button.btn', { type: 'button', text: 'Zurücksetzen', onclick: function () {
+            A.confirm({ title: 'Auf diese Sicherung zurück?', text: 'Der Stand von ' + A.fmt.date(b.created) + ' wird wiederhergestellt. Vorher legt Helix eine neue Sicherung an.', ok: 'Zurücksetzen' }).then(function (ok) {
+              if (!ok) return;
+              A.api(base + '/rollback?backup=' + encodeURIComponent(b.name), { method: 'POST' }).then(function (r) {
+                A.toast('Wiederhergestellt');
+                if (r.desktop) A.HX.shell.reload(); else after();
+              }).catch(err);
+            });
+          } })));
+      });
+    }).catch(function (e) { A.clear(box).appendChild(el('div.row', null, el('small', { text: A.errText(e) }))); });
+  }
+
+  /* ------------------------------------------------------------ Desktop */
+  function viewDesktop() {
+    A.setTitle('Helix-Desktop');
+    var p = page(); p.appendChild(busy('Wird geladen …'));
+    A.api('/api/desktop/info').then(function (d) {
+      p = page();
+      p.appendChild(el('div.hero', null, A.appIcon({ glyph: 'monitor', colors: ['#2DD4BF', '#0E6F66'] }, 72), el('div.t', null, el('h1', { text: d.name || 'Helix-Desktop' }),
+        el('div.meta', null, el('span', { text: d.version ? 'Version ' + d.version : 'Eingebaute Version' }), el('span.badge', { text: d.updated ? 'Aktualisiert' : 'Eingebaut' })))));
+      p.appendChild(el('p.muted', { text: 'Der Desktop ist selbst eine Web-App und lässt sich wie jede App aktualisieren, austauschen und zurücksetzen. Deine Einstellungen und Fenster bleiben dabei erhalten.' }));
+      var act = el('div.actions');
+      if (d.updateUrl) act.appendChild(el('button.btn.primary', { type: 'button', onclick: function () { fromUrl('desktop', d.updateUrl); } }, icon('refresh-cw'), 'Nach Update suchen'));
+      act.appendChild(el('button.btn', { type: 'button', onclick: function () { pickPackage('desktop'); } }, icon('upload'), 'Desktop-Paket einspielen'));
+      p.appendChild(act);
+      var g = el('div.group');
+      if (d.build && d.build.commit) g.appendChild(el('div.row', null, el('div.t', null, el('b', { text: 'Eingebauter Stand' }), el('small.mono.selectable', { text: String(d.build.commit).slice(0, 12) + (d.build.built ? ', ' + d.build.built : '') }))));
+      if (d.updateUrl) g.appendChild(el('div.row', null, el('div.t', null, el('b', { text: 'Update-Adresse' }), el('small.selectable', { text: d.updateUrl, style: { wordBreak: 'break-all' } }))));
+      if (g.children.length) p.appendChild(g);
+      p.appendChild(el('span.label', { text: 'Sicherungen' }));
+      var gb = el('div.group'); p.appendChild(gb);
+      backups('/api/desktop', gb, viewDesktop);
+      if (d.updated) p.appendChild(el('div.actions', { style: { marginTop: '18px' } }, el('button.btn.danger', { type: 'button', onclick: function () {
+        A.confirm({ title: 'Eingebauten Desktop verwenden?', text: 'Das installierte Desktop-Update wird entfernt. Helix startet wieder mit dem Desktop aus der App.', ok: 'Zurücksetzen', danger: true }).then(function (ok) {
+          if (!ok) return;
+          A.api('/api/desktop/reset', { method: 'POST' }).then(function () { A.HX.shell.reload(); }).catch(err);
+        });
+      } }, icon('rotate-ccw'), 'Auf eingebauten Desktop zurücksetzen')));
+    }).catch(function (e) { p = page('Helix-Desktop'); p.appendChild(el('p.muted', { text: A.errText(e) })); });
+  }
+
+  /* ------------------------------------------------------------ Start */
+  function route(params) {
+    if (params.get('package')) { S.pkgTarget = null; show('package', params.get('package')); return; }
+    if (params.get('path')) {
+      var root = params.get('root') || 'home', path = params.get('path');
+      var p = page('Paket wird gelesen'); p.appendChild(busy(path.split('/').pop()));
+      A.fs.read(root, path).then(function (blob) { stage(blob, path.split('/').pop()); }).catch(function (e) { err(e); show('list'); });
+      return;
+    }
+    if (params.get('app')) {
+      var id = params.get('app');
+      show('app', id);
+      if (params.get('check')) {
+        var a = S.apps.filter(function (x) { return x.id === id; })[0];
+        if (a && a.updateUrl) fromUrl(a.id, a.updateUrl);
+        else if (a) A.toast('„' + a.name + '“ hat keine Update-Adresse. Spiele ein Paket ein.');
+      }
+      return;
+    }
+    if (params.get('suite')) { show('add', params.get('suite')); return; }
+    if (params.get('view') === 'desktop') { show('desktop'); return; }
+    show('list');
+  }
+  A.onNavigate(function (p) { loadApps().then(function () { route(p); }); });
+  A.on('apps', function () { loadApps().then(function () { if (S.view === 'list') viewList(); }); });
+  if (!window.Helix) { page('App-Center', 'Apps installieren geht nur in der Helix-App.'); return; }
+  loadApps().then(function () { route(A.params); }, function (e) { err(e); });
+})();
+</script>
+</body>
+</html>

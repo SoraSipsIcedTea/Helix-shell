@@ -1,2 +1,5 @@
-The project developed by:
+Helix-Desktop:
+ -- SoraSipsIcedTea
+
+Ursprüngliches Projekt (Ubuntu Tour):
  -- malisipi

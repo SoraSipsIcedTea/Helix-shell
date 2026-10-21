@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dateien</title>
+<link rel="stylesheet" href="../lib/app.css">
+<style>
+  .crumbs { display: flex; align-items: center; gap: 2px; min-width: 0; flex: 1; overflow-x: auto; scrollbar-width: none; }
+  .crumbs::-webkit-scrollbar { display: none; }
+  .crumbs button { border: 0; background: transparent; border-radius: 8px; padding: 6px 8px; cursor: pointer; white-space: nowrap; font-family: var(--font-display); font-size: 13px; }
+  .crumbs button:hover { background: var(--raised); }
+  .crumbs button:last-child { font-weight: 500; }
+  .crumbs .ic { width: 14px; height: 14px; color: var(--mist); }
+  .files { padding: 6px; position: relative; }
+  .files.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 4px; align-content: start; }
+  .files.grid .item { flex-direction: column; text-align: center; gap: 6px; padding: 10px 6px; min-height: 108px; }
+  .files.grid .item .t b { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-weight: 400; font-size: 13px; word-break: break-word; }
+  .files.grid .item .t small, .files.grid .item .meta { display: none; }
+  .ficon { width: 36px; height: 36px; flex: none; display: flex; align-items: center; justify-content: center; border-radius: 10px; }
+  .files.grid .ficon { width: 54px; height: 54px; }
+  .ficon .ic { width: 60%; height: 60%; }
+  .ficon.dir { color: var(--teal); }
+  .ficon.img { background: var(--abyss) center / cover no-repeat; }
+  .ficon.img .ic { display: none; }
+  .ficon.k-media { color: #C79BFF; } .ficon.k-text { color: #7DA2FF; } .ficon.k-pkg { color: var(--peach); } .ficon.k-other { color: var(--mist); }
+  .meta { color: var(--mist); font-size: 12px; white-space: nowrap; text-align: right; min-width: 72px; }
+  .meta.date { min-width: 120px; }
+  .status { display: flex; gap: 12px; padding: 6px 12px; border-top: 1px solid var(--line); color: var(--mist); font-size: 12px; flex: none; }
+  .search-box { width: 200px; }
+  @media (max-width: 640px) { .search-box { width: 100%; order: 10; } .meta.date { display: none; } .toolbar.wrap { flex-wrap: wrap; } }
+  .side .nav small { color: var(--mist); font-size: 11px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="toolbar wrap" id="tb"></div>
+  <div class="app-main" style="position:relative">
+    <aside class="side collapsible" id="side"></aside>
+    <div class="content grow" id="content"></div>
+  </div>
+  <div class="status" id="status"></div>
+</div>
+<script src="../lib/app.js"></script>
+<script>
+(function () {
+  'use strict';
+  var el = A.el, icon = A.icon, fs = A.fs;
+  var S = { root: A.params.get('root') || 'home', path: A.params.get('path') || '', roots: [], entries: [], writable: true,
+    view: localStorage.getItem('files.view') || 'list', hidden: false, sel: null, clip: null, hist: [], query: '', sort: 'name' };
+  var content = document.getElementById('content'), side = document.getElementById('side'), tb = document.getElementById('tb'), status = document.getElementById('status');
+
+  /* ------------------------------------------------------------ Werkzeugleiste */
+  var bBack = el('button.icon-btn', { type: 'button', title: 'Zurück', 'aria-label': 'Zurück', onclick: goBack }, icon('arrow-left'));
+  var bUp = el('button.icon-btn', { type: 'button', title: 'Übergeordneter Ordner', 'aria-label': 'Nach oben', onclick: goUp }, icon('arrow-up'));
+  var bSide = el('button.icon-btn.only-narrow', { type: 'button', 'aria-label': 'Orte', onclick: function () { side.classList.toggle('open'); } }, icon('panel-left'));
+  var crumbs = el('div.crumbs');
+  var q = el('input.field.search-box', { type: 'search', placeholder: 'Suchen', spellcheck: 'false' });
+  var qt = null;
+  q.addEventListener('input', function () { clearTimeout(qt); qt = setTimeout(function () { S.query = q.value.trim(); load(); }, 350); });
+  var bNew = el('button.icon-btn', { type: 'button', title: 'Neu', 'aria-label': 'Neu' }, icon('plus'));
+  bNew.addEventListener('click', function () {
+    A.menu([
+      { label: 'Ordner', icon: 'folder-plus', run: newFolder },
+      { label: 'Textdatei', icon: 'file-text', run: newFile },
+      { label: 'Dateien hochladen', icon: 'upload', run: upload }
+    ], bNew);
+  });
+  var bView = el('button.icon-btn', { type: 'button', title: 'Ansicht', 'aria-label': 'Ansicht wechseln', onclick: function () {
+    S.view = S.view === 'list' ? 'grid' : 'list';
+    try { localStorage.setItem('files.view', S.view); } catch (e) { }
+    render();
+  } });
+  var bMore = el('button.icon-btn', { type: 'button', title: 'Mehr', 'aria-label': 'Mehr' }, icon('ellipsis-vertical'));
+  bMore.addEventListener('click', function () {
+    A.menu([
+      { label: S.hidden ? 'Versteckte ausblenden' : 'Versteckte zeigen', icon: 'eye', run: function () { S.hidden = !S.hidden; render(); } },
+      { label: 'Nach Name sortieren', icon: 'list', run: function () { S.sort = 'name'; render(); } },
+      { label: 'Nach Datum sortieren', icon: 'clock', run: function () { S.sort = 'date'; render(); } },
+      { label: 'Nach Größe sortieren', icon: 'archive', run: function () { S.sort = 'size'; render(); } },
+      '-',
+      S.clip ? { label: 'Einfügen', icon: 'clipboard-paste', run: paste } : null,
+      { label: 'Ordner verbinden', icon: 'link', run: connect },
+      { label: 'Neu laden', icon: 'refresh-cw', run: load }
+    ], bMore);
+  });
+  tb.append(bSide, bBack, bUp, crumbs, q, bNew, bView, bMore);
+
+  /* ------------------------------------------------------------ Orte */
+  var PLACES = [['Dokumente', 'file-text'], ['Downloads', 'download'], ['Bilder', 'image'], ['Musik', 'music'], ['Videos', 'film']];
+  function loadRoots() {
+    return fs.roots().then(function (r) { S.roots = r || []; renderSide(); });
+  }
+  function rootIcon(r) { return r.kind === 'internal' ? 'house' : r.kind === 'device' ? 'smartphone' : r.kind === 'apps' ? 'package' : r.kind === 'app' ? 'app-window' : 'folder'; }
+  function renderSide() {
+    A.clear(side);
+    var nav = function (label, ic, root, path, extra) {
+      var cur = S.root === root && S.path === path;
+      var b = el('button.nav', { type: 'button', 'aria-current': String(cur) }, icon(ic), el('span', { text: label }), extra || null);
+      b.addEventListener('click', function () { side.classList.remove('open'); go(root, path); });
+      side.appendChild(b);
+      return b;
+    };
+    side.appendChild(el('h3', { text: 'Orte' }));
+    var home = S.roots.filter(function (r) { return r.id === 'home'; })[0];
+    if (home) {
+      nav('Persönlicher Ordner', 'house', 'home', '');
+      PLACES.forEach(function (p) { nav(p[0], p[1], 'home', p[0]); });
+    }
+    var dev = S.roots.filter(function (r) { return r.kind === 'device'; });
+    var trees = S.roots.filter(function (r) { return r.kind === 'tree'; });
+    if (dev.length) {
+      side.appendChild(el('h3', { text: 'Gerät' }));
+      dev.forEach(function (r) { nav(r.name, 'smartphone', r.id, ''); });
+    }
+    side.appendChild(el('h3', { text: 'Verbundene Ordner' }));
+    trees.forEach(function (r) {
+      var b = nav(r.name, 'folder', r.id, '', r.access === false ? el('small', { text: 'kein Zugriff' }) : null);
+      A.longPress(b, function (at) {
+        A.menu([{ head: r.name },
+          { label: 'Umbenennen', icon: 'pencil', run: function () {
+            A.prompt({ title: 'Ort umbenennen', value: r.name, ok: 'Umbenennen' }).then(function (v) {
+              if (!v || !v.trim()) return;
+              A.api('/api/fs/roots/' + encodeURIComponent(r.id), { method: 'PATCH', json: { name: v.trim() } }).then(loadRoots).catch(err);
+            });
+          } },
+          { label: 'Trennen', icon: 'unlink', danger: true, run: function () {
+            A.confirm({ title: '„' + r.name + '“ trennen?', text: 'Die Dateien bleiben, wo sie sind. Helix vergisst nur den Zugriff.', ok: 'Trennen', danger: true }).then(function (ok) {
+              if (!ok) return;
+              A.api('/api/fs/roots/' + encodeURIComponent(r.id), { method: 'DELETE' }).then(function () { if (S.root === r.id) go('home', ''); loadRoots(); }).catch(err);
+            });
+          } }], at);
+      });
+    });
+    side.appendChild(el('button.nav', { type: 'button', onclick: connect }, icon('plus'), el('span', { text: 'Ordner verbinden' })));
+    var sys = S.roots.filter(function (r) { return r.system; });
+    if (sys.length) {
+      side.appendChild(el('h3', { text: 'System' }));
+      sys.forEach(function (r) { nav(r.name, rootIcon(r), r.id, ''); });
+    }
+    if (!dev.length && window.Helix && !window.Helix.dev) {
+      side.appendChild(el('h3', { text: 'Gerät' }));
+      side.appendChild(el('button.nav', { type: 'button', onclick: function () { A.open('sys:settings', { page: 'storage' }); } }, icon('shield'), el('span', { text: 'Gerätespeicher freigeben' })));
+    }
+  }
+  function rootName(id) { var r = S.roots.filter(function (x) { return x.id === id; })[0]; return r ? (id === 'home' ? 'Persönlicher Ordner' : r.name) : id; }
+  function connect() {
+    A.api('/api/fs/roots', { method: 'POST' }).then(function (r) {
+      if (!r || r.cancelled) return;
+      loadRoots().then(function () { if (r.id) go(r.id, ''); });
+    }).catch(err);
+  }
+
+  /* ------------------------------------------------------------ Laden */
+  function go(root, path, noHist) {
+    if (!noHist && (root !== S.root || path !== S.path)) S.hist.push([S.root, S.path]);
+    S.root = root; S.path = path || ''; S.sel = null; S.query = ''; q.value = '';
+    load();
+  }
+  function goBack() { var h = S.hist.pop(); if (h) go(h[0], h[1], true); }
+  function goUp() { if (!S.path) return; go(S.root, S.path.split('/').slice(0, -1).join('/')); }
+  A.onBack(function () {
+    if (side.classList.contains('open')) { side.classList.remove('open'); return true; }
+    if (S.query) { q.value = ''; S.query = ''; load(); return true; }
+    if (S.hist.length) { goBack(); return true; }
+    return false;
+  });
+  A.onNavigate(function (p) { go(p.get('root') || 'home', p.get('path') || ''); });
+
+  var loadSeq = 0;
+  function load() {
+    var my = ++loadSeq;
+    renderCrumbs();
+    renderSide();
+    A.setTitle(S.path ? S.path.split('/').pop() : rootName(S.root));
+    var p = S.query ? fs.search(S.root, S.path, S.query).then(function (r) { return { entries: r.results, writable: false, search: true, truncated: r.truncated }; })
+      : fs.list(S.root, S.path);
+    content.setAttribute('aria-busy', 'true');
+    return p.then(function (r) {
+      if (my !== loadSeq) return;
+      S.entries = r.entries || [];
+      S.writable = !!r.writable;
+      S.search = !!r.search;
+      S.truncated = !!r.truncated;
+      render();
+    }).catch(function (e) {
+      if (my !== loadSeq) return;
+      S.entries = [];
+      A.clear(content).appendChild(el('div.empty', null, icon('triangle-alert'), el('b', { text: 'Ordner lässt sich nicht öffnen' }), el('span', { text: A.errText(e) }),
+        S.root.indexOf('t') === 0 ? el('button.btn', { type: 'button', text: 'Zugriff erneut erlauben', onclick: connect }) : null));
+      status.textContent = '';
+    }).then(function () { content.removeAttribute('aria-busy'); });
+  }
+
+  function renderCrumbs() {
+    A.clear(crumbs);
+    var parts = S.path ? S.path.split('/') : [];
+    crumbs.appendChild(el('button', { type: 'button', text: rootName(S.root), onclick: function () { go(S.root, ''); } }));
+    parts.forEach(function (p, i) {
+      crumbs.appendChild(icon('chevron-right'));
+      var path = parts.slice(0, i + 1).join('/');
+      crumbs.appendChild(el('button', { type: 'button', text: p, onclick: function () { go(S.root, path); } }));
+    });
+    crumbs.scrollLeft = 1e6;
+    bUp.disabled = !S.path; bBack.disabled = !S.hist.length;
+  }
+
+  /* ------------------------------------------------------------ Darstellung */
+  var IMG = /\.(png|jpe?g|gif|webp|avif|bmp|svg|ico)$/i;
+  function kind(e) {
+    if (e.dir) return ['folder', 'dir'];
+    var n = e.name.toLowerCase();
+    if (IMG.test(n)) return ['image', 'k-media'];
+    if (/\.(mp3|m4a|aac|ogg|oga|opus|wav|flac)$/.test(n)) return ['music', 'k-media'];
+    if (/\.(mp4|m4v|webm|mov|mkv)$/.test(n)) return ['film', 'k-media'];
+    if (/\.pdf$/.test(n)) return ['book-open', 'k-media'];
+    if (/\.(zip|helix|lwav)$/.test(n)) return ['package', 'k-pkg'];
+    if (/\.(html?|js|css|json|md|txt|xml|ts|py|sh|java|csv|ya?ml)$/.test(n)) return [/\.(html?|js|css|json|ts|py|sh|java|xml)$/.test(n) ? 'code' : 'file-text', 'k-text'];
+    return ['file', 'k-other'];
+  }
+  function sorted() {
+    var list = S.entries.filter(function (e) { return S.hidden || e.name.charAt(0) !== '.'; });
+    list.sort(function (a, b) {
+      if (a.dir !== b.dir) return a.dir ? -1 : 1;
+      if (S.sort === 'date') return (b.modified || 0) - (a.modified || 0);
+      if (S.sort === 'size') return (b.size || 0) - (a.size || 0);
+      return a.name.localeCompare(b.name, 'de', { numeric: true, sensitivity: 'base' });
+    });
+    return list;
+  }
+  function pathOf(e) { return e.path != null ? e.path : (S.path ? S.path + '/' : '') + e.name; }
+  function render() {
+    A.clear(bView).appendChild(icon(S.view === 'list' ? 'layout-grid' : 'list'));
+    var list = sorted();
+    A.clear(content);
+    if (!list.length) {
+      content.appendChild(el('div.empty', null, icon(S.search ? 'search' : 'folder-open'),
+        el('b', { text: S.search ? 'Nichts gefunden' : 'Dieser Ordner ist leer' }),
+        el('span', { text: S.search ? 'Keine Datei enthält „' + S.query + '“ im Namen.' : S.writable ? 'Lege einen Ordner an oder lade Dateien hoch.' : '' }),
+        !S.search && S.writable ? el('div', { style: { display: 'flex', gap: '8px' } },
+          el('button.btn', { type: 'button', onclick: newFolder }, icon('folder-plus'), 'Neuer Ordner'),
+          el('button.btn', { type: 'button', onclick: upload }, icon('upload'), 'Hochladen')) : null));
+    } else {
+      var box = el('div.files.' + S.view, { role: 'listbox', 'aria-label': 'Dateien' });
+      list.forEach(function (e) { box.appendChild(row(e)); });
+      content.appendChild(box);
+    }
+    var dirs = list.filter(function (e) { return e.dir; }).length;
+    status.textContent = '';
+    var nf = list.length - dirs;
+    status.append(el('span', { text: nf + (nf === 1 ? ' Datei, ' : ' Dateien, ') + dirs + ' Ordner' + (S.truncated ? ' (gekürzt)' : '') }));
+    if (!S.writable && !S.search) status.append(el('span', { text: 'Nur lesen' }));
+    if (S.clip) status.append(el('span', { text: (S.clip.cut ? 'Ausgeschnitten: ' : 'Kopiert: ') + S.clip.name }));
+  }
+  function row(e) {
+    var k = kind(e), p = pathOf(e);
+    var fi = el('span.ficon.' + k[1], null, icon(k[0]));
+    if (!e.dir && IMG.test(e.name) && e.size < 8 * 1024 * 1024) { fi.classList.add('img'); fi.style.backgroundImage = 'url("' + fs.url(S.root, p) + '")'; }
+    var sub = e.dir ? 'Ordner' : A.fmt.bytes(e.size);
+    if (S.search) sub = p;
+    var b = el('button.item', { type: 'button', role: 'option', 'aria-selected': String(S.sel === p), title: e.name },
+      fi, el('span.t', null, el('b', { text: e.name }), el('small.only-narrow', { text: S.search ? p : sub + (e.modified ? ', ' + A.fmt.date(e.modified) : '') })),
+      el('span.meta.hide-narrow', { text: e.dir ? '' : A.fmt.bytes(e.size) }),
+      el('span.meta.date.hide-narrow', { text: A.fmt.date(e.modified) }));
+    var touch = false;
+    b.addEventListener('pointerdown', function (ev) { touch = ev.pointerType !== 'mouse'; });
+    b.addEventListener('click', function () {
+      if (touch) { open(e); return; }
+      S.sel = p;
+      Array.prototype.forEach.call(content.querySelectorAll('.item'), function (x) { x.setAttribute('aria-selected', String(x === b)); });
+    });
+    b.addEventListener('dblclick', function () { open(e); });
+    b.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') open(e); if (ev.key === 'Delete') remove(e); if (ev.key === 'F2') rename(e); });
+    A.longPress(b, function (at) { itemMenu(e, at); });
+    return b;
+  }
+
+  /* ------------------------------------------------------------ Aktionen */
+  function err(e) { A.toast(A.errText(e)); }
+  function open(e, appId) {
+    var p = pathOf(e);
+    if (e.dir) { go(S.root, p); return; }
+    A.openFile(S.root, p, appId);
+  }
+  function itemMenu(e, at) {
+    var p = pathOf(e), items = [{ head: e.name }];
+    items.push({ label: 'Öffnen', icon: e.dir ? 'folder-open' : 'external-link', run: function () { open(e); } });
+    if (!e.dir) {
+      items.push({ label: 'Im Editor öffnen', icon: 'pencil', run: function () { open(e, 'sys:editor'); } });
+      if (/\.(zip|html?|json)$/i.test(e.name)) items.push({ label: 'Als App installieren', icon: 'package-plus', run: function () { A.open('sys:appcenter', { root: S.root, path: p }); } });
+      items.push({ label: 'Mit anderer App öffnen', icon: 'share-2', run: function () { A.api('/api/fs/share?' + new URLSearchParams({ root: S.root, path: p, view: 1 }), { method: 'POST' }).catch(err); } });
+      items.push({ label: 'Teilen', icon: 'share-2', run: function () { A.api('/api/fs/share?' + new URLSearchParams({ root: S.root, path: p }), { method: 'POST' }).catch(err); } });
+      items.push({ label: 'Herunterladen', icon: 'download', run: function () { var a = el('a', { href: fs.url(S.root, p, { download: true }), download: e.name }); document.body.appendChild(a); a.click(); a.remove(); } });
+    }
+    if (S.search) items.push({ label: 'Ordner öffnen', icon: 'folder', run: function () { go(S.root, p.split('/').slice(0, -1).join('/')); } });
+    items.push('-');
+    items.push({ label: 'Kopieren', icon: 'copy', run: function () { S.clip = { root: S.root, path: p, name: e.name, cut: false }; render(); } });
+    if (S.writable || S.search) {
+      items.push({ label: 'Ausschneiden', icon: 'scissors', run: function () { S.clip = { root: S.root, path: p, name: e.name, cut: true }; render(); } });
+      items.push({ label: 'Umbenennen', icon: 'pencil', run: function () { rename(e); } });
+    }
+    items.push({ label: 'Eigenschaften', icon: 'info', run: function () { props(e); } });
+    if (S.writable || S.search) { items.push('-'); items.push({ label: 'Löschen', icon: 'trash-2', danger: true, run: function () { remove(e); } }); }
+    A.menu(items, at);
+  }
+  function newFolder() {
+    A.prompt({ title: 'Neuer Ordner', value: 'Neuer Ordner', ok: 'Anlegen' }).then(function (n) {
+      if (!n || !n.trim()) return;
+      fs.mkdir(S.root, (S.path ? S.path + '/' : '') + n.trim()).then(load).catch(err);
+    });
+  }
+  function newFile() {
+    A.prompt({ title: 'Neue Textdatei', value: 'Notiz.txt', ok: 'Anlegen' }).then(function (n) {
+      if (!n || !n.trim()) return;
+      var p = (S.path ? S.path + '/' : '') + n.trim();
+      fs.write(S.root, p, '', { overwrite: false }).then(function () { load(); A.openFile(S.root, p, 'sys:editor'); }).catch(err);
+    });
+  }
+  function upload() { A.pickFiles(null, true).then(putFiles); }
+  function putFiles(files) {
+    if (!files.length) return;
+    var done = 0, fail = 0;
+    status.textContent = 'Lade ' + files.length + ' Datei(en) hoch …';
+    var next = function (i) {
+      if (i >= files.length) {
+        A.toast(done + ' Datei(en) hochgeladen' + (fail ? ', ' + fail + ' fehlgeschlagen' : ''));
+        load();
+        return;
+      }
+      var f = files[i], p = (S.path ? S.path + '/' : '') + f.name;
+      fs.write(S.root, p, f, { overwrite: false }).catch(function (e) {
+        if (e.status !== 409) throw e;
+        return A.confirm({ title: '„' + f.name + '“ gibt es schon', text: 'Ersetzen?', ok: 'Ersetzen', danger: true }).then(function (ok) {
+          if (ok) return fs.write(S.root, p, f);
+          throw new Error('übersprungen');
+        });
+      }).then(function () { done++; }, function (e) { fail++; if (e.message !== 'übersprungen') err(e); }).then(function () { next(i + 1); });
+    };
+    next(0);
+  }
+  function rename(e) {
+    A.prompt({ title: 'Umbenennen', value: e.name, ok: 'Umbenennen' }).then(function (n) {
+      if (!n || !n.trim() || n.trim() === e.name) return;
+      fs.rename(S.search ? S.root : S.root, pathOf(e), n.trim()).then(load).catch(err);
+    });
+  }
+  function remove(e) {
+    A.confirm({ title: '„' + e.name + '“ löschen?', text: e.dir ? 'Der Ordner und alles darin werden endgültig gelöscht.' : 'Die Datei wird endgültig gelöscht.', ok: 'Löschen', danger: true }).then(function (ok) {
+      if (!ok) return;
+      fs.remove(S.root, pathOf(e)).then(function () { A.toast('Gelöscht'); load(); }).catch(err);
+    });
+  }
+  function paste() {
+    var c = S.clip;
+    if (!c) return;
+    (c.cut ? fs.move(c.root, c.path, S.root, S.path) : fs.copy(c.root, c.path, S.root, S.path)).then(function () {
+      if (c.cut) S.clip = null;
+      load();
+    }).catch(err);
+  }
+  function props(e) {
+    var p = pathOf(e);
+    fs.stat(S.root, p).then(function (s) {
+      var t = el('table.kv.selectable');
+      [['Name', s.name], ['Ort', rootName(S.root) + (p.indexOf('/') >= 0 ? ' / ' + p.split('/').slice(0, -1).join(' / ') : '')],
+        ['Art', s.dir ? 'Ordner' : (s.mime || '')], ['Größe', s.dir ? '' : A.fmt.bytes(s.size) + ' (' + (s.size || 0).toLocaleString('de-DE') + ' Bytes)'],
+        ['Geändert', A.fmt.date(s.modified)]].forEach(function (r) { if (r[1]) t.appendChild(el('tr', null, el('td', { text: r[0] }), el('td', { text: r[1] }))); });
+      A.HX.alert({ title: 'Eigenschaften', node: t });
+    }).catch(err);
+  }
+
+  /* Ziehen und Ablegen */
+  var hint = null;
+  document.addEventListener('dragover', function (ev) {
+    if (!S.writable || !ev.dataTransfer || Array.prototype.indexOf.call(ev.dataTransfer.types, 'Files') < 0) return;
+    ev.preventDefault();
+    if (!hint) { hint = el('div.drop-hint', { text: 'Hier ablegen, um hochzuladen' }); document.body.appendChild(hint); }
+  });
+  document.addEventListener('dragleave', function (ev) { if (!ev.relatedTarget && hint) { hint.remove(); hint = null; } });
+  document.addEventListener('drop', function (ev) {
+    if (hint) { hint.remove(); hint = null; }
+    if (!ev.dataTransfer || !ev.dataTransfer.files.length) return;
+    ev.preventDefault();
+    putFiles(Array.prototype.slice.call(ev.dataTransfer.files));
+  });
+  document.addEventListener('keydown', function (ev) {
+    if (ev.target.tagName === 'INPUT') return;
+    if (ev.key === 'Backspace' || (ev.altKey && ev.key === 'ArrowUp')) { goUp(); ev.preventDefault(); }
+    if ((ev.ctrlKey || ev.metaKey) && ev.key === 'v') paste();
+  });
+  content.addEventListener('contextmenu', function (ev) {
+    if (ev.target.closest('.item')) return;
+    ev.preventDefault();
+    A.menu([
+      S.clip ? { label: 'Einfügen', icon: 'clipboard-paste', run: paste } : null,
+      { label: 'Neuer Ordner', icon: 'folder-plus', run: newFolder, disabled: !S.writable },
+      { label: 'Neue Textdatei', icon: 'file-text', run: newFile, disabled: !S.writable },
+      { label: 'Hochladen', icon: 'upload', run: upload, disabled: !S.writable },
+      { label: 'Neu laden', icon: 'refresh-cw', run: load }
+    ], { x: ev.clientX, y: ev.clientY });
+  });
+  A.on('native:storage', function () { loadRoots(); });
+
+  if (!fs) { content.appendChild(el('div.empty', null, icon('server'), el('b', { text: 'Kein Helix-Server' }), el('span', { text: 'Dateien gibt es nur in der Helix-App.' }))); return; }
+  loadRoots().then(load, function (e) { err(e); load(); });
+})();
+</script>
+</body>
+</html>

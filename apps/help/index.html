@@ -1,35 +1,78 @@
-<!DOCTYPE html>
-<html>
-    <head>
-        <link rel="stylesheet" href="../css/app-layout.css">
-        <link rel="stylesheet" href="../css/app-styles.css">
-        <link rel="stylesheet" href="../../css/Font.css">
-        <link rel="stylesheet" href="css/app.css">
-        <script src="js/app.js"></script>
-    </head>
-    <body>
-        <div class="titlebar-container">
-            <div class="titlebar">
-                <button onclick="goToBack();" id="back" class="special-button">
-                    <img class="special-button-image" draggable="false" src="../../icons/Suru/Suru/scalable/actions/go-previous-symbolic.svg"/>
-                </button>
-                <button onclick="goToForward();" id="forward" class="special-button">
-                    <img class="special-button-image" draggable="false" src="../../icons/Suru/Suru/scalable/actions/go-next-symbolic.svg"/>
-                </button>
-                <div class="special-title">Ubuntu Desktop Guide</div>
-                <button onclick="showBookmarks();" id="bookmarks" class="special-button">
-                    <img class="special-button-image" draggable="false" src="../../icons/Suru/Suru/scalable/places/user-bookmarks-symbolic.svg"/>
-                </button>
-                <button onclick="searchbutton();" id="searchbutton" class="special-button">
-                    <img class="special-button-image" draggable="false" src="../../icons/Suru/Suru/scalable/actions/search-symbolic.svg"/>
-                </button>
-                <button onclick="showMenu();" id="menu" class="special-button">
-                    <img class="special-button-image" draggable="false" src="../../icons/Suru/Suru/scalable/actions/open-menu-symbolic.svg"/>
-                </button>
-            </div>
-            <div class="content">
-                <iframe class="content-iframe" allowfullscreen src="https://help.ubuntu.com/stable/ubuntu-help/index.html.en"></iframe>
-            </div>
-        </div>
-    </body>
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Hilfe</title>
+<link rel="stylesheet" href="../lib/app.css">
+<style>
+  .doc { max-width: 680px; margin: 0 auto; padding: 26px 22px 60px; user-select: text; -webkit-user-select: text; line-height: 1.6; }
+  .doc h1 { font-size: 26px; margin-bottom: 6px; }
+  .doc h2 { margin: 30px 0 8px; font-size: 18px; }
+  .doc p, .doc li { color: var(--paper); }
+  .doc p + p { margin-top: 10px; }
+  .doc ul { padding-left: 20px; margin: 8px 0; }
+  .doc li { margin: 4px 0; }
+  .doc code { font-family: var(--font-mono); font-size: 13px; background: var(--abyss); padding: 1px 6px; border-radius: 6px; }
+  .doc pre { font: 12.5px/1.55 var(--font-mono); background: var(--abyss); padding: 12px 14px; border-radius: var(--r-s); overflow-x: auto; }
+  .doc .lead { color: var(--mist); font-size: 15px; }
+  .doc kbd { font: 12px var(--font-mono); border: 1px solid var(--line-strong); border-bottom-width: 2px; border-radius: 5px; padding: 0 5px; }
+</style>
+</head>
+<body>
+<div class="app"><div class="scroll grow">
+<article class="doc">
+  <h1>So funktioniert Helix</h1>
+  <p class="lead">Helix ist ein kleiner Server auf deinem Handy mit einem Desktop obendrauf. Jede App läuft in ihrem eigenen Fenster und hat ihre eigene Adresse.</p>
+
+  <h2>Desktop und Handy-Ansicht</h2>
+  <p>Auf breiten Bildschirmen siehst du Fenster, die du ziehen, vergrößern und an den Rand schieben kannst. Auf dem Handy füllt jedes Fenster den Bildschirm. Unten wechselst du zwischen <b>Start</b>, <b>Fenster</b> und <b>Apps</b>. Die Ansicht stellst du in Einstellungen, Desktop um.</p>
+  <ul>
+    <li>Das Helix-Zeichen oben links öffnet die Übersicht mit allen Fenstern.</li>
+    <li>Uhr antippen: Kalender und Benachrichtigungen.</li>
+    <li>Symbole oben rechts: Schnelleinstellungen wie Hell/Dunkel und Wach halten.</li>
+    <li>Lange drücken (oder Rechtsklick) auf ein App-Symbol: Menü mit Direktlinks, Dock und App-Infos.</li>
+    <li>Die Zurück-Taste von Android geht zuerst in der App zurück, dann zum Start.</li>
+  </ul>
+
+  <h2>Apps installieren und aktualisieren</h2>
+  <p>Im <b>App-Center</b> installierst du Pakete: ein ZIP, ein Applanner-Projekt (.json) oder eine einzelne HTML-Datei. Helix schlägt vor, welche App das Paket aktualisiert, und zeigt dir vor dem Installieren, welche Dateien sich ändern. Vor jedem Update legt Helix eine Sicherung an.</p>
+  <p>Teilst du ein Paket aus einer anderen Android-App mit Helix, öffnet sich das App-Center von selbst. Hat eine App eine Update-Adresse, prüft „Nach Update suchen“ sie direkt.</p>
+  <p>Alternativ verbindest du einen <b>Ordner</b>: Helix startet die App dann direkt von dort. Praktisch, wenn du sie selbst entwickelst.</p>
+
+  <h2>Dateien</h2>
+  <p><b>Dateien</b> zeigt deinen persönlichen Ordner, verbundene Ordner und, wenn du es erlaubst, den ganzen Gerätespeicher. Apps fragen beim ersten Zugriff, ob sie deine Dateien sehen dürfen.</p>
+
+  <h2>Für App-Entwickler</h2>
+  <p>Jede App bekommt <code>window.Helix</code>. Ein paar Beispiele:</p>
+<pre>Helix.fs.request()                   // Dateizugriff erbitten
+Helix.fs.list('home', 'Dokumente')
+Helix.shared.open('helix')           // gemeinsame Ablage der Suiten
+Helix.shell.notify('Fertig', 'Export gespeichert')
+Helix.shell.open('aura', 'index.html#heute')
+Helix.shell.update()                 // im App-Center nach Updates suchen</pre>
+  <p>Mit einer <code>helix-app.json</code> im Paket legst du Name, Version, Symbol, Direktlinks und eine Update-Adresse fest:</p>
+<pre>{
+  "id": "meine-app",
+  "name": "Meine App",
+  "version": "1.2.0",
+  "icon": "icon.png",
+  "update": "https://example.org/meine-app.zip",
+  "shortcuts": [{ "name": "Neu", "path": "index.html#neu" }]
+}</pre>
+  <p>Die DevTools (eruda) öffnest du über das Fenstermenü. Im <b>Terminal</b> zeigt <code>logs</code> alle Konsolen-Ausgaben live.</p>
+
+  <h2>Tastatur</h2>
+  <ul>
+    <li><kbd>Strg</kbd> + <kbd>Leertaste</kbd> oder <kbd>Meta</kbd>: Übersicht</li>
+    <li><kbd>Alt</kbd> + <kbd>F4</kbd>: Fenster schließen</li>
+    <li><kbd>Esc</kbd>: Menü, Dialog oder Übersicht schließen</li>
+  </ul>
+
+  <h2>Der Desktop ist austauschbar</h2>
+  <p>Auch der Desktop selbst ist eine Web-App. Im App-Center unter Helix-Desktop aktualisierst du ihn, spielst einen anderen ein oder gehst zum eingebauten zurück. Deine Einstellungen bleiben dabei erhalten.</p>
+</article>
+</div></div>
+<script src="../lib/app.js"></script>
+</body>
 </html>

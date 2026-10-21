@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vorschau</title>
+<link rel="stylesheet" href="../lib/app.css">
+<style>
+  body { background: #05070F; }
+  .stage { flex: 1; min-height: 0; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; touch-action: none; }
+  .stage img { max-width: 100%; max-height: 100%; object-fit: contain; transform-origin: center; transition: transform .15s ease; user-select: none; -webkit-user-drag: none; }
+  .stage img.zoomed { max-width: none; max-height: none; cursor: grab; transition: none; }
+  .stage video { max-width: 100%; max-height: 100%; background: #000; }
+  .stage iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: #fff; }
+  .audio { display: flex; flex-direction: column; align-items: center; gap: 18px; color: #EEF2F8; padding: 20px; text-align: center; }
+  .audio .disc { width: 160px; height: 160px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: radial-gradient(circle, #1B2448 0 18%, #131A36 19% 100%); box-shadow: 0 0 0 1px rgba(255,255,255,.08), 0 18px 40px rgba(0,0,0,.5); }
+  .audio .disc .ic { width: 56px; height: 56px; color: var(--peach); }
+  .audio audio { width: min(420px, 90vw); }
+  .toolbar { background: #0B1020; color: #EEF2F8; border-color: rgba(255,255,255,.08); }
+  .file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-display); font-weight: 500; padding: 0 6px; }
+  .nav-arrow { position: absolute; top: 50%; margin-top: -24px; width: 48px; height: 48px; border-radius: 50%; border: 0; background: rgba(11,16,32,.6); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; z-index: 2; }
+  .nav-arrow:hover { background: rgba(11,16,32,.85); }
+  .nav-arrow.prev { left: 12px; } .nav-arrow.next { right: 12px; }
+  .counter { color: #9AA6C2; font-size: 12px; white-space: nowrap; }
+  .empty { color: #9AA6C2; }
+  .empty b { color: #EEF2F8; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="toolbar" id="tb"></div>
+  <div class="stage" id="stage"></div>
+</div>
+<script src="../lib/app.js"></script>
+<script>
+(function () {
+  'use strict';
+  var el = A.el, icon = A.icon, fs = A.fs;
+  var stage = document.getElementById('stage'), tb = document.getElementById('tb');
+  var V = { root: 'home', path: '', siblings: [], i: -1 };
+  var IMG = /\.(png|jpe?g|gif|webp|avif|bmp|ico|svg)$/i, VID = /\.(mp4|m4v|webm|mov|mkv)$/i, AUD = /\.(mp3|m4a|aac|ogg|oga|opus|wav|flac)$/i, PDF = /\.pdf$/i, HTML = /\.html?$/i;
+  function kindOf(n) { return IMG.test(n) ? 'img' : VID.test(n) ? 'video' : AUD.test(n) ? 'audio' : PDF.test(n) ? 'pdf' : HTML.test(n) ? 'html' : 'other'; }
+
+  var nameEl = el('div.file-name'), counter = el('span.counter');
+  var bMore = el('button.icon-btn', { type: 'button', 'aria-label': 'Mehr' }, icon('ellipsis-vertical'));
+  bMore.addEventListener('click', function () {
+    A.menu([
+      { label: 'Mit anderer App öffnen', icon: 'external-link', run: function () { share(true); } },
+      { label: 'Teilen', icon: 'share-2', run: function () { share(false); } },
+      { label: 'Herunterladen', icon: 'download', run: function () { var a = el('a', { href: fs.url(V.root, V.path, { download: true }), download: name() }); document.body.appendChild(a); a.click(); a.remove(); } },
+      { label: 'Im Editor öffnen', icon: 'pencil', run: function () { A.openFile(V.root, V.path, 'sys:editor'); } },
+      { label: 'Ordner in Dateien zeigen', icon: 'folder', run: function () { A.open('sys:files', { root: V.root, path: dir() }); } }
+    ], bMore);
+  });
+  tb.append(nameEl, counter, bMore);
+  function name() { return V.path.split('/').pop(); }
+  function dir() { return V.path.split('/').slice(0, -1).join('/'); }
+  function share(view) { A.api('/api/fs/share?' + new URLSearchParams({ root: V.root, path: V.path, view: view ? 1 : '' }), { method: 'POST' }).catch(function (e) { A.toast(A.errText(e)); }); }
+
+  var zoom = 1, panX = 0, panY = 0;
+  function show() {
+    A.clear(stage);
+    zoom = 1; panX = 0; panY = 0;
+    var n = name(), k = kindOf(n), url = fs.url(V.root, V.path);
+    nameEl.textContent = n;
+    A.setTitle(n);
+    counter.textContent = V.siblings.length > 1 && V.i >= 0 ? (V.i + 1) + ' von ' + V.siblings.length : '';
+    if (k === 'img') {
+      var img = el('img', { src: url, alt: n, draggable: 'false' });
+      img.addEventListener('dblclick', function (e) { setZoom(zoom > 1 ? 1 : 2.5, img); });
+      img.addEventListener('error', function () { fail('Das Bild lässt sich nicht anzeigen.'); });
+      stage.appendChild(img);
+      wirePan(img);
+    } else if (k === 'video') {
+      stage.appendChild(el('video', { src: url, controls: true, autoplay: true, playsinline: true }));
+    } else if (k === 'audio') {
+      stage.appendChild(el('div.audio', null, el('div.disc', null, icon('music')), el('b', { text: n }), el('audio', { src: url, controls: true, autoplay: true })));
+    } else if (k === 'html') {
+      stage.appendChild(el('iframe', { src: url, sandbox: 'allow-scripts', title: n }));
+    } else if (k === 'pdf') {
+      if (window.Helix && !window.Helix.dev) {
+        fail('PDFs zeigt Android mit einer anderen App an.', el('button.btn.primary', { type: 'button', onclick: function () { share(true); } }, icon('external-link'), 'Mit anderer App öffnen'));
+      } else stage.appendChild(el('iframe', { src: url, title: n }));
+    } else fail('Für „' + n + '“ gibt es keine Vorschau.');
+    renderArrows();
+  }
+  function fail(text, extra) {
+    A.clear(stage).appendChild(el('div.empty', null, icon('eye'), el('b', { text: name() }), el('span', { text: text }), extra || null));
+  }
+  function renderArrows() {
+    if (V.siblings.length < 2) return;
+    stage.appendChild(el('button.nav-arrow.prev', { type: 'button', 'aria-label': 'Vorherige', onclick: function () { step(-1); } }, icon('chevron-left')));
+    stage.appendChild(el('button.nav-arrow.next', { type: 'button', 'aria-label': 'Nächste', onclick: function () { step(1); } }, icon('chevron-right')));
+  }
+  function step(d) {
+    if (V.siblings.length < 2) return;
+    V.i = (V.i + d + V.siblings.length) % V.siblings.length;
+    V.path = (dir() ? dir() + '/' : '') + V.siblings[V.i];
+    show();
+  }
+  function setZoom(z, img) {
+    zoom = z; if (z === 1) { panX = 0; panY = 0; }
+    img.classList.toggle('zoomed', z > 1);
+    img.style.transform = 'translate(' + panX + 'px,' + panY + 'px) scale(' + z + ')';
+  }
+  function wirePan(img) {
+    var pts = {}, start = null;
+    stage.onwheel = function (e) { e.preventDefault(); setZoom(Math.max(1, Math.min(8, zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15))), img); };
+    stage.onpointerdown = function (e) {
+      if (e.target.closest('button')) return;
+      pts[e.pointerId] = { x: e.clientX, y: e.clientY };
+      stage.setPointerCapture(e.pointerId);
+      var ids = Object.keys(pts);
+      if (ids.length === 2) { var a = pts[ids[0]], b = pts[ids[1]]; start = { d: Math.hypot(a.x - b.x, a.y - b.y), z: zoom }; }
+      else start = { x: e.clientX, y: e.clientY, px: panX, py: panY, t: Date.now() };
+    };
+    stage.onpointermove = function (e) {
+      if (!pts[e.pointerId]) return;
+      pts[e.pointerId] = { x: e.clientX, y: e.clientY };
+      var ids = Object.keys(pts);
+      if (ids.length === 2 && start && start.d) {
+        var a = pts[ids[0]], b = pts[ids[1]];
+        setZoom(Math.max(1, Math.min(8, start.z * Math.hypot(a.x - b.x, a.y - b.y) / start.d)), img);
+      } else if (start && start.x != null && zoom > 1) {
+        panX = start.px + e.clientX - start.x; panY = start.py + e.clientY - start.y; setZoom(zoom, img);
+      }
+    };
+    stage.onpointerup = stage.onpointercancel = function (e) {
+      var s = start;
+      delete pts[e.pointerId];
+      if (s && s.x != null && zoom === 1 && Date.now() - s.t < 500) {
+        var dx = e.clientX - s.x;
+        if (Math.abs(dx) > 60) step(dx < 0 ? 1 : -1);
+      }
+      if (!Object.keys(pts).length) start = null;
+    };
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'ArrowRight') step(1);
+    if (e.key === 'ArrowLeft') step(-1);
+  });
+
+  function open(root, path) {
+    V.root = root; V.path = path; V.siblings = []; V.i = -1;
+    if (!path) { A.clear(stage).appendChild(el('div.empty', null, icon('image'), el('b', { text: 'Nichts geöffnet' }), el('span', { text: 'Öffne ein Bild, ein Video oder Musik in Dateien.' }))); return; }
+    show();
+    var k = kindOf(name());
+    if (k !== 'img' && k !== 'video') return;
+    fs.list(root, dir()).then(function (r) {
+      V.siblings = (r.entries || []).filter(function (e) { return !e.dir && kindOf(e.name) === k; })
+        .map(function (e) { return e.name; }).sort(function (a, b) { return a.localeCompare(b, 'de', { numeric: true }); });
+      V.i = V.siblings.indexOf(name());
+      counter.textContent = V.siblings.length > 1 ? (V.i + 1) + ' von ' + V.siblings.length : '';
+      if (!stage.querySelector('.nav-arrow')) renderArrows();
+    }).catch(function () { });
+  }
+  A.onNavigate(function (p) { open(p.get('root') || 'home', p.get('path') || ''); });
+  open(A.params.get('root') || 'home', A.params.get('path') || '');
+})();
+</script>
+</body>
+</html>

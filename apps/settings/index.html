@@ -1,29 +1,278 @@
-<!DOCTYPE html>
-<html>
-    <head>
-        <link rel="stylesheet" href="../css/app-layout.css">
-        <link rel="stylesheet" href="../css/app-styles.css">
-        <link rel="stylesheet" href="../../css/Font.css">
-        <link rel="stylesheet" href="css/app.css">
-        <script src="js/argument.js"></script>
-        <script src="js/app.js"></script>
-    </head>
-    <body onload="checkArgument();">
-        <div class="titlebar-container">
-            <div class="titlebar">
-                <button onclick="searchAnything();" id="searchAnything" class="special-button">
-                    <img class="special-button-image" draggable="false" src="../../icons/Suru/Suru/scalable/actions/search-symbolic.svg"/>
-                </button>
-                <div class="settings-title special-title">Settings</div>
-                <button onclick="showMenu();" id="menu" class="special-button">
-                    <img class="special-button-image" draggable="false" src="../../icons/Suru/Suru/scalable/actions/open-menu-symbolic.svg"/>
-                </button>
-                <div class="category-title special-title">About</div>
-            </div>
-            <div class="content">
-                <iframe class="side-iframe" allowfullscreen src="side.html"></iframe>
-                <iframe class="content-iframe" allowfullscreen src="about.html"></iframe>
-            </div>
-        </div>
-    </body>
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Einstellungen</title>
+<link rel="stylesheet" href="../lib/app.css">
+<style>
+  .walls { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 10px; margin: 10px 0 18px; }
+  .wall { position: relative; aspect-ratio: 16 / 10; border-radius: var(--r-m); border: 2px solid transparent; background: var(--abyss) center / cover; cursor: pointer; padding: 0; overflow: hidden; }
+  .wall[aria-pressed="true"] { border-color: var(--teal); }
+  .wall span { position: absolute; left: 8px; bottom: 6px; color: #fff; font-size: 12px; text-shadow: 0 1px 4px rgba(0,0,0,.7); }
+  .wall .ic { position: absolute; inset: 0; margin: auto; width: 28px; height: 28px; color: var(--mist); }
+  .bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin-top: 8px; }
+  .bar > div { height: 100%; background: linear-gradient(90deg, var(--teal), var(--peach)); }
+  .logo { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
+  .logo svg { width: 64px; height: 64px; }
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="toolbar only-narrow"><button class="icon-btn" id="menu" type="button" aria-label="Navigation"></button><b id="tbt" style="font-family:var(--font-display);font-weight:500">Einstellungen</b></div>
+  <div class="app-main" style="position:relative">
+    <aside class="side collapsible" id="side"></aside>
+    <div class="content" id="content"></div>
+  </div>
+</div>
+<script src="../lib/app.js"></script>
+<script>
+(function () {
+  'use strict';
+  var el = A.el, icon = A.icon, HX = A.HX;
+  var side = document.getElementById('side'), content = document.getElementById('content');
+  var PAGES = [['look', 'Darstellung', 'palette'], ['desktop', 'Desktop', 'layout-grid'], ['storage', 'Speicher', 'hard-drive'],
+    ['shared', 'Gemeinsame Ablagen', 'archive'], ['sync', 'Sync-Anker', 'radio'], ['system', 'System', 'cpu'], ['about', 'Über Helix', 'info']];
+  var cur = A.params.get('page') || 'look';
+  document.getElementById('menu').appendChild(icon('panel-left'));
+  document.getElementById('menu').addEventListener('click', function () { side.classList.toggle('open'); });
+
+  function nav() {
+    A.clear(side);
+    PAGES.forEach(function (p) {
+      var b = el('button.nav', { type: 'button', 'aria-current': String(p[0] === cur) }, icon(p[2]), el('span', { text: p[1] }));
+      b.addEventListener('click', function () { side.classList.remove('open'); go(p[0]); });
+      side.appendChild(b);
+    });
+  }
+  function go(p) {
+    cur = p; nav();
+    var title = PAGES.filter(function (x) { return x[0] === p; })[0];
+    document.getElementById('tbt').textContent = title ? title[1] : 'Einstellungen';
+    var page = el('div.page');
+    A.clear(content).appendChild(page);
+    content.scrollTop = 0;
+    (VIEWS[p] || VIEWS.look)(page);
+  }
+  A.onNavigate(function (p) { go(p.get('page') || 'look'); });
+  A.onBack(function () { if (side.classList.contains('open')) { side.classList.remove('open'); return true; } return false; });
+  function err(e) { A.toast(A.errText(e)); }
+  function row(title, sub, control) { return el('div.row', null, el('div.t', null, el('b', { text: title }), sub ? el('small', { text: sub }) : null), control || null); }
+  function pref(k) { return HX.prefs.get(k); }
+  function setPref(k, v) { HX.prefs.set(k, v); }
+  var sys = null;
+  function settings() { return sys ? Promise.resolve(sys) : A.api('/api/system/settings').then(function (s) { sys = s; return s; }); }
+  function putSetting(k, v) {
+    var o = {}; o[k] = v;
+    return A.api('/api/system/settings', { method: 'PUT', json: o }).then(function (s) { sys = s; return s; }).catch(function (e) { err(e); });
+  }
+
+  var VIEWS = {
+    look: function (p) {
+      A.setTitle('Darstellung');
+      p.append(el('h1', { text: 'Darstellung' }), el('p.lead', { text: 'Farben und Hintergrund des Desktops und der Helix-Apps.' }));
+      p.appendChild(el('span.label', { text: 'Stil' }));
+      p.appendChild(el('div.group', null, row('Erscheinungsbild', 'Automatisch folgt der Einstellung von Android',
+        A.seg([['dark', 'Dunkel'], ['light', 'Hell'], ['auto', 'Automatisch']], pref('theme'), function (v) { setPref('theme', v); }))));
+      p.appendChild(el('span.label', { text: 'Hintergrund' }));
+      var walls = el('div.walls');
+      var mk = function (id, name, bg) {
+        var b = el('button.wall', { type: 'button', 'aria-pressed': String(pref('wallpaper') === id), style: bg ? { backgroundImage: bg } : null }, el('span', { text: name }));
+        b.addEventListener('click', function () {
+          Array.prototype.forEach.call(walls.children, function (x) { x.setAttribute('aria-pressed', 'false'); });
+          b.setAttribute('aria-pressed', 'true');
+          setPref('wallpaper', id);
+        });
+        walls.appendChild(b);
+        return b;
+      };
+      HX.wallpapers.forEach(function (w) { mk(w.id, w.name, 'url("../../wallpapers/' + w.id + '-klein.jpg")'); });
+      ['#0B1020', '#123B38', '#3A2A1E'].forEach(function (c, i) { var b = mk(c, ['Tinte', 'Tiefsee', 'Erde'][i]); b.style.background = c; });
+      var own = pref('wallpaper');
+      if (own && /^data:/.test(own)) mk(own, 'Eigenes Bild', 'url("' + own + '")');
+      var up = el('button.wall', { type: 'button', 'aria-label': 'Eigenes Bild wählen' }, icon('upload'), el('span', { text: 'Eigenes Bild' }));
+      up.addEventListener('click', function () {
+        A.pickFiles('image/*').then(function (f) {
+          if (!f[0]) return;
+          shrink(f[0]).then(function (url) { setPref('wallpaper', url); go('look'); }).catch(err);
+        });
+      });
+      walls.appendChild(up);
+      p.appendChild(walls);
+    },
+    desktop: function (p) {
+      A.setTitle('Desktop');
+      p.append(el('h1', { text: 'Desktop' }), el('p.lead', { text: 'Wie sich Fenster, Dock und Startseite verhalten.' }));
+      p.appendChild(el('div.group', null,
+        row('Ansicht', 'Handy: Fenster füllen den Bildschirm, unten eine Leiste. Automatisch wechselt ab 900 Pixel Breite.',
+          A.seg([['auto', 'Automatisch'], ['desktop', 'Desktop'], ['mobile', 'Handy']], pref('mode'), function (v) { setPref('mode', v); })),
+        row('Symbole auf dem Desktop', 'Apps und Direktlinks auf der Arbeitsfläche', A.toggle(pref('desktopIcons') !== false, function (v) { setPref('desktopIcons', v); })),
+        row('Sekunden in der Uhr', null, A.toggle(!!pref('seconds'), function (v) { setPref('seconds', v); })),
+        row('Fenster wiederherstellen', 'Nach dem Neustart öffnen sich die Fenster der letzten Sitzung', A.toggle(pref('restore') !== false, function (v) { setPref('restore', v); }))));
+      p.appendChild(el('span.label', { text: 'Dock' }));
+      var g = el('div.group');
+      var dock = (pref('dock') || []).slice();
+      dock.forEach(function (id, i) {
+        var a = HX.apps.get(id);
+        if (!a) return;
+        g.appendChild(el('div.row', null, A.appIcon({ name: a.name, iconUrl: a.iconUrl, glyph: a.glyph, colors: a.colors }, 32), el('div.t', null, el('b', { text: a.name })),
+          el('button.icon-btn', { type: 'button', 'aria-label': 'Nach oben', disabled: i === 0, onclick: function () { var d = dock.slice(); d.splice(i - 1, 0, d.splice(i, 1)[0]); setPref('dock', d); go('desktop'); } }, icon('chevron-up')),
+          el('button.icon-btn', { type: 'button', 'aria-label': 'Entfernen', onclick: function () { setPref('dock', dock.filter(function (x) { return x !== id; })); go('desktop'); } }, icon('x'))));
+      });
+      g.appendChild(el('div.row.click', { role: 'button', onclick: function (e) {
+        var avail = HX.apps.all().filter(function (a) { return dock.indexOf(a.id) < 0; });
+        A.menu(avail.map(function (a) { return { label: a.name, run: function () { setPref('dock', dock.concat([a.id])); go('desktop'); } }; }), e.currentTarget);
+      } }, icon('plus'), el('div.t', null, el('b', { text: 'App zum Dock hinzufügen' }))));
+      p.appendChild(g);
+      p.appendChild(el('span.label', { text: 'Zurücksetzen' }));
+      p.appendChild(el('div.group', null, row('Desktop-Einstellungen zurücksetzen', 'Dock, Hintergrund, Direktlinks und Fenster auf Anfang', el('button.btn.danger', { type: 'button', text: 'Zurücksetzen', onclick: function () {
+        A.confirm({ title: 'Alles zurücksetzen?', text: 'Dock, Hintergrund, Direktlinks und gemerkte Fenster gehen verloren. Apps und Dateien bleiben.', ok: 'Zurücksetzen', danger: true }).then(function (ok) {
+          if (!ok) return;
+          var d = HX.prefs.defaults;
+          Object.keys(d).forEach(function (k) { HX.prefs.get()[k] = JSON.parse(JSON.stringify(d[k])); });
+          HX.prefs.save(true);
+          setTimeout(function () { HX.shell.reload(); }, 300);
+        });
+      } }))));
+    },
+    storage: function (p) {
+      A.setTitle('Speicher');
+      p.append(el('h1', { text: 'Speicher' }), el('p.lead', { text: 'Was Helix sehen darf und wie viel Platz frei ist.' }));
+      var info = el('div.group'); p.appendChild(info);
+      var roots = el('div.group');
+      A.api('/api/system/info').then(function (i) {
+        var used = i.storageTotal - i.storageFree;
+        info.appendChild(el('div.row', null, el('div.t', null, el('b', { text: A.fmt.bytes(i.storageFree) + ' frei' }), el('small', { text: 'von ' + A.fmt.bytes(i.storageTotal) }),
+          el('div.bar', null, el('div', { style: { width: Math.round(used / i.storageTotal * 100) + '%' } })))));
+        info.appendChild(row('Zugriff auf alle Dateien', i.allFiles ? 'Erlaubt: Dateien zeigt den Gerätespeicher.' : 'Damit siehst du in Dateien den ganzen Gerätespeicher (Downloads, DCIM …).',
+          i.allFiles ? el('span.badge.teal', { text: 'Erlaubt' }) : el('button.btn', { type: 'button', text: 'Erlauben', onclick: function () {
+            A.api('/api/system/all-files', { method: 'POST' }).then(function () { A.toast('Android öffnet die Einstellung. Danach hierher zurück.'); }).catch(err);
+          } })));
+      }).catch(err);
+      p.appendChild(el('span.label', { text: 'Verbundene Ordner' }));
+      p.appendChild(roots);
+      var load = function () {
+        A.fs.roots().then(function (list) {
+          A.clear(roots);
+          list.filter(function (r) { return r.kind === 'tree'; }).forEach(function (r) {
+            roots.appendChild(el('div.row', null, icon('folder'), el('div.t', null, el('b', { text: r.name }), el('small', { text: r.access === false ? 'Kein Zugriff mehr' : r.writable ? 'Lesen und schreiben' : 'Nur lesen' })),
+              el('button.btn.ghost', { type: 'button', text: 'Trennen', onclick: function () {
+                A.confirm({ title: '„' + r.name + '“ trennen?', text: 'Die Dateien bleiben, wo sie sind.', ok: 'Trennen', danger: true }).then(function (ok) {
+                  if (ok) A.api('/api/fs/roots/' + encodeURIComponent(r.id), { method: 'DELETE' }).then(load).catch(err);
+                });
+              } })));
+          });
+          roots.appendChild(el('div.row.click', { role: 'button', onclick: function () { A.api('/api/fs/roots', { method: 'POST' }).then(load).catch(err); } }, icon('plus'), el('div.t', null, el('b', { text: 'Ordner verbinden' }))));
+        }).catch(err);
+      };
+      load();
+    },
+    shared: function (p) {
+      A.setTitle('Gemeinsame Ablagen');
+      p.append(el('h1', { text: 'Gemeinsame Ablagen' }), el('p.lead', { text: 'Über eine Ablage tauschen Apps Daten aus. Die Suiten nutzen „helix“ ohne Rückfrage, andere Apps fragen beim ersten Mal.' }));
+      var box = el('div'); p.appendChild(box);
+      var load = function () {
+        A.api('/api/shared/admin').then(function (list) {
+          A.clear(box);
+          if (!list.length) box.appendChild(el('div.empty', null, icon('archive'), el('b', { text: 'Noch keine Ablagen' }), el('span', { text: 'Sie entstehen, sobald eine App eine anlegt.' })));
+          list.forEach(function (a) {
+            var g = el('div.group');
+            g.appendChild(el('div.row', null, icon('archive'), el('div.t', null, el('b', { text: a.name }), el('small', { text: a.count + ' Einträge, ' + A.fmt.bytes(a.bytes) })),
+              el('button.icon-btn', { type: 'button', 'aria-label': 'Mehr', onclick: function (e) {
+                A.menu([
+                  { label: 'Inhalt leeren', icon: 'trash-2', run: function () { A.confirm({ title: '„' + a.name + '“ leeren?', text: 'Alle Einträge werden gelöscht.', ok: 'Leeren', danger: true }).then(function (ok) { if (ok) A.api('/api/shared/admin/' + encodeURIComponent(a.name) + '/clear', { method: 'POST' }).then(load).catch(err); }); } },
+                  { label: 'Ablage löschen', icon: 'trash-2', danger: true, run: function () { A.confirm({ title: '„' + a.name + '“ löschen?', text: 'Die Ablage und alle Einträge verschwinden.', ok: 'Löschen', danger: true }).then(function (ok) { if (ok) A.api('/api/shared/admin/' + encodeURIComponent(a.name), { method: 'DELETE' }).then(load).catch(err); }); } }
+                ], e.currentTarget);
+              } }, icon('ellipsis-vertical'))));
+            g.appendChild(row('Alle Apps dürfen zugreifen', null, A.toggle(!!a.all, function (v) { save(a, v, a.members.map(function (m) { return m.id; })); })));
+            a.members.forEach(function (m) {
+              g.appendChild(el('div.row', null, el('div.t', null, el('b', { text: m.name }), el('small', { text: m.installed ? 'Darf zugreifen' : 'Nicht mehr installiert' })),
+                el('button.btn.ghost', { type: 'button', text: 'Entziehen', onclick: function () { save(a, a.all, a.members.filter(function (x) { return x.id !== m.id; }).map(function (x) { return x.id; })); } })));
+            });
+            box.appendChild(g);
+          });
+        }).catch(function (e) { A.clear(box).appendChild(el('p.muted', { text: A.errText(e) })); });
+      };
+      var save = function (a, all, members) { A.api('/api/shared/admin/' + encodeURIComponent(a.name), { method: 'POST', json: { all: all, members: members } }).then(load).catch(err); };
+      load();
+    },
+    sync: function (p) {
+      A.setTitle('Sync-Anker');
+      p.append(el('h1', { text: 'Sync-Anker' }), el('p.lead', { text: 'Helix kann für deine Apps im WLAN Daten zwischen Geräten abgleichen. Andere Geräte verbinden sich mit diesem Handy.' }));
+      var g = el('div.group'); p.appendChild(g);
+      var load = function () {
+        A.api('/api/sync/status').then(function (s) {
+          A.clear(g);
+          g.appendChild(row('Anker aktiv', s.running ? 'Läuft auf Port ' + s.port : 'Aus', A.toggle(!!s.active, function (v) {
+            A.api('/api/sync/active', { method: 'POST', json: { on: v } }).then(function () { setTimeout(load, 500); }).catch(err);
+          })));
+          if (s.addresses && s.addresses.length) g.appendChild(el('div.row', null, el('div.t', null, el('b', { text: 'Adressen' }), el('small.mono.selectable', { text: s.addresses.map(function (a) { return a + ':' + s.port; }).join('\n'), style: { whiteSpace: 'pre' } }))));
+          g.appendChild(el('div.row', null, el('div.t', null, el('b', { text: 'Bekannte Geräte' }), el('small', { text: s.devices && s.devices.length ? s.devices.join(', ') : 'Noch keine' }))));
+        }).catch(function (e) { A.clear(g).appendChild(el('div.row', null, el('small', { text: A.errText(e) }))); });
+      };
+      load();
+    },
+    system: function (p) {
+      A.setTitle('System');
+      p.append(el('h1', { text: 'System' }), el('p.lead', { text: 'Wie Helix auf dem Handy läuft.' }));
+      var g = el('div.group'); p.appendChild(g);
+      settings().then(function (s) {
+        g.append(
+          row('Im Hintergrund wach halten', 'Eine Benachrichtigung hält Helix am Laufen, damit Sync und Server erreichbar bleiben.', A.toggle(!!s.keepAlive, function (v) { putSetting('keepAlive', v); })),
+          row('Internet für Apps', 'Aus: Apps können nur noch Helix selbst erreichen.', A.toggle(s.network !== false, function (v) { putSetting('network', v); })),
+          row('DevTools erlauben', 'Konsole und Element-Ansicht (eruda) im Fenstermenü', A.toggle(s.devtools !== false, function (v) { putSetting('devtools', v); })),
+          row('Mit dem Handy starten', 'Den Hintergrunddienst nach dem Einschalten starten', A.toggle(!!s.autoStart, function (v) { putSetting('autoStart', v); })));
+      }).catch(err);
+      p.appendChild(el('span.label', { text: 'Wartung' }));
+      p.appendChild(el('div.group', null,
+        row('Konsolen-Ausgaben', 'Alles, was Apps in die Konsole schreiben, im Terminal', el('button.btn', { type: 'button', text: 'Terminal öffnen', onclick: function () { A.open('sys:terminal', { cmd: 'logs' }); } })),
+        row('Desktop neu laden', 'Hilft, wenn etwas hängt. Fenster bleiben erhalten.', el('button.btn', { type: 'button', text: 'Neu laden', onclick: function () { HX.shell.reload(); } })),
+        row('Helix-Desktop', 'Version, Updates, Sicherungen', el('button.btn', { type: 'button', text: 'Im App-Center', onclick: function () { A.open('sys:appcenter', { view: 'desktop' }); } }))));
+    },
+    about: function (p) {
+      A.setTitle('Über Helix');
+      var logo = el('div.logo');
+      logo.appendChild(HX.mark());
+      logo.appendChild(el('div', null, el('h1', { text: 'Helix 2' }), el('p.muted', { text: 'Dein Web-Desktop auf dem Handy' })));
+      p.appendChild(logo);
+      var t = el('table.kv.selectable'); p.appendChild(el('div.group', { style: { padding: '8px 14px' } }, t));
+      var add = function (k, v) { if (v != null && v !== '') t.appendChild(el('tr', null, el('td', { text: k }), el('td', { text: String(v) }))); };
+      Promise.all([A.api('/api/system/info'), A.api('/api/desktop/info').catch(function () { return {}; })]).then(function (r) {
+        var i = r[0], d = r[1];
+        add('Helix', i.appVersion);
+        add('Desktop', (d.version || 'eingebaut') + (d.updated ? ' (aktualisiert)' : ''));
+        if (d.build && d.build.commit) add('Desktop-Stand', String(d.build.commit).slice(0, 12));
+        add('Gerät', [i.manufacturer, i.model].filter(Boolean).join(' '));
+        add('Android', i.android + (i.sdk ? ' (API ' + i.sdk + ')' : ''));
+        add('WebView', i.webview);
+        add('Lokaler Server', i.server);
+        add('Apps', i.apps);
+        if (i.dev) add('Modus', 'Entwicklungsserver');
+      }).catch(err);
+      p.appendChild(el('span.label', { text: 'Dank' }));
+      p.appendChild(el('p.muted.selectable', { text: 'Der Desktop beruht auf Ubuntu Tour von malisipi (MPL 2.0). Symbole: Lucide (ISC). Schrift: Poppins (SIL Open Font License). Server: NanoHTTPD (BSD). DevTools: eruda (MIT).' }));
+    }
+  };
+
+  /** Bild verkleinern (max. 1920 px), damit es in die Desktop-Einstellungen passt. */
+  function shrink(file) {
+    return new Promise(function (res, rej) {
+      var img = new Image(), url = URL.createObjectURL(file);
+      img.onload = function () {
+        var s = Math.min(1, 1920 / Math.max(img.width, img.height));
+        var c = document.createElement('canvas'); c.width = Math.round(img.width * s); c.height = Math.round(img.height * s);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        res(c.toDataURL('image/jpeg', 0.82));
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); rej(new Error('Das Bild lässt sich nicht lesen.')); };
+      img.src = url;
+    });
+  }
+
+  if (!window.Helix) PAGES = PAGES.filter(function (p) { return p[0] === 'look' || p[0] === 'desktop'; });
+  go(cur);
+})();
+</script>
+</body>
 </html>

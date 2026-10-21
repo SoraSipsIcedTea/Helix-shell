@@ -1,53 +1,40 @@
-# Ubuntu Tour
+# Helix-Desktop
 
-Web based Ubuntu 22.04 desktop remake. You can try latest ubuntu edition remake from [here](https://malisipi.github.io/ubuntu-tour/)
+Der Desktop von **Helix 2**: eine Web-Oberfläche, die in der Helix-App (Android-WebView mit lokalem Server) läuft und in der deine Web-Apps als Fenster starten.
 
-## Features
+Ursprünglich ein Fork von [Ubuntu Tour](https://github.com/malisipi/ubuntu-tour) von malisipi. Aufbau und Bedienidee (Leiste oben, Dock, Übersicht, Fenster) stammen von dort; Code, Gestaltung und Apps sind für Helix neu geschrieben, das Ubuntu-Branding ist vollständig ersetzt.
 
-* Multi-window (You can open same application 2 (or more) times)
-* Resizable, draggable windows
-* Changeable wallpapers
-* Similar interface with Gnome (Ubuntu Tour imitate Gnome Interface however never use Gnome code.)
-* Clone applications
+## Was drin ist
 
-## Why i do?
+- **Desktop-Ansicht** (ab 900 px Breite): Fenster ziehen, Größe ändern, an Ränder einrasten, maximieren; Dock links, Übersicht mit allen Fenstern, Starter mit Suche.
+- **Handy-Ansicht**: Fenster füllen den Bildschirm, unten Start, Fenster und Apps; Startseite mit Uhr, den Suiten (Aura360, Devworks Studio, Cockpit) und deinen Apps.
+- **System-Apps** (`apps/`): Dateien, App-Center (Installieren, Updates mit Vorschau, Sicherungen, Berechtigungen, Desktop-Update), Einstellungen, Editor, Vorschau, Terminal, Uhr, Hilfe.
+- Fenster und Einstellungen überstehen Neustarts und Desktop-Updates (gespeichert über `/api/desktop/prefs`).
 
-For introduce the Ubuntu environment' beauty (on web) and for fun. :) I was inspired from [tour.ubuntu.com
-](https://github.com/canonical-web-and-design/tour.ubuntu.com) (however not used code from this project)
+## Wie der Desktop mit Helix spricht
 
-## You can [try it!](https://malisipi.github.io/ubuntu-tour/)
+- Der Helix-Server fügt in jede HTML-Seite `window.Helix` ein. Der Desktop (`https://desktop.helix.local`) bekommt System-Rechte.
+- Installierte Apps laufen in Fenstern auf eigenen Origins (`https://<id>.helix.local`) und schicken Nachrichten per `postMessage` (`{__helix: 1, op, args}`): `state`, `title`, `notify`, `open`, `open-url`, `pin`, `update`, `close`.
+- Android ruft `window.__helixDesktop.emit(type, data)`, `.back()` und `.insets({top, bottom, left, right})` auf. Beim Start holt `POST /api/desktop/hello` die gesammelten Ereignisse ab.
+- Die System-Apps teilen den Origin des Desktops und erreichen ihn über `parent.HX` (siehe `apps/lib/app.js`).
 
-### Also thanks to 9to5Linux about [new that relased about the project](https://9to5linux.com/ubuntu-online-21-10-released-lets-you-try-ubuntu-desktop-in-a-web-browser).
+## Entwickeln
 
-## To-Do List
+Im Repository [Helix-2](https://github.com/SoraSipsIcedTea/Helix-2) liegt unter `tools/devserver` ein Entwicklungsserver für den PC:
 
-* Increase clone apps' functionality
-* [13] Create more clone application
-* [+] Update interface to similar Ubuntu 21.10 interface
-* [+] Update interface to similar Ubuntu 22.04 interface
+```
+java -cp … app.kyst.helix2.dev.DevServer --desktop ../Helix-shell --data ./devdata --port 8711
+```
 
-## App Demo Mode
+Dann `http://desktop.localhost:8711/` öffnen. Änderungen an diesem Repository sind nach einem Neuladen sichtbar.
 
- You can present your demo app with that project.
+## Updates
 
-> `https://malisipi.github.io/ubuntu-tour/?[`name`,`location`,`icon`]`
+`helix-app.json` enthält die Update-Adresse dieses Repositories. Im App-Center unter **Helix-Desktop** holt „Nach Update suchen“ den aktuellen Stand von `main`, zeigt die Änderungen und legt vorher eine Sicherung an. Die APK bringt beim Bauen ebenfalls den aktuellen Stand mit.
 
-* name: Your app's name
-* icon: Your app's icon
-* location: Your app's website
+## Lizenzen
 
-> You can't send notification or create a new window. Because your app demo that hosted on another domain will be blocked by CORS policy. If you need to create a more powerful app demo, You can host the project with together your app demo.
-
-> https://malisipi.github.io/ubuntu-tour/?[%22Ubuntu-Tour%22,%22https://malisipi.github.io/ubuntu-tour/%22,%22https://malisipi.github.io/ubuntu-tour/icons/Suru/Suru/scalable/places/start-here-symbolic.svg%22]
-
-## Notes
-
-> Ubuntu Tour is compatible with touch devices. (Window resize on mobile is harder than on computer. And some browsers may not support resize on mobile.)
-
-> This website can't run correctly without server. Because [Same Origin Policy](https://developer.mozilla.org/en-US/docs/Web/Security/Same-origin_policy) block communication with iframes on `file://`.
-
-> Ubuntu Tour' Web Browser can't render all pages because of [Content Security Policy (CSP)](https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP).
-
-## License
-
-This project licensed by MPL2. Learn more from [here](./LICENSE.md)
+- Code: [Mozilla Public License 2.0](LICENSE.txt), wie Ubuntu Tour.
+- Symbole: [Lucide](https://lucide.dev), ISC-Lizenz ([LICENSE_LUCIDE.txt](LICENSE_LUCIDE.txt)).
+- Schrift: Poppins von Indian Type Foundry, SIL Open Font License 1.1 ([LICENSE_OFL.txt](LICENSE_OFL.txt)).
+- Hintergrundbilder: für Helix erzeugt, gleiche Lizenz wie der Code.

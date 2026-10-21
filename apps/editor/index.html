@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Editor</title>
+<link rel="stylesheet" href="../lib/app.css">
+<style>
+  .ed { flex: 1; min-height: 0; display: flex; position: relative; background: var(--abyss); }
+  .gutter { flex: none; padding: 12px 8px 12px 12px; text-align: right; color: var(--mist); opacity: .55; font: 13px/1.6 var(--font-mono); overflow: hidden; user-select: none; white-space: pre; min-width: 44px; }
+  textarea {
+    flex: 1; min-width: 0; border: 0; outline: none; resize: none; padding: 12px 14px 40vh 6px; margin: 0;
+    background: transparent; color: var(--paper); font: 13px/1.6 var(--font-mono); tab-size: 2; white-space: pre; overflow: auto;
+    user-select: text; -webkit-user-select: text;
+  }
+  .wrap textarea { white-space: pre-wrap; word-break: break-word; }
+  .wrap .gutter { display: none; }
+  .file-name { font-family: var(--font-display); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; padding: 0 6px; }
+  .file-name small { font-family: var(--font-ui); color: var(--peach); font-weight: 400; margin-left: 6px; }
+  .findbar { display: flex; gap: 6px; align-items: center; padding: 6px 8px; border-bottom: 1px solid var(--line); }
+  .status { display: flex; gap: 14px; padding: 5px 12px; border-top: 1px solid var(--line); color: var(--mist); font-size: 12px; flex: none; }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <div class="toolbar" id="tb"></div>
+  <div class="findbar" id="find" hidden></div>
+  <div class="ed" id="ed"><div class="gutter" id="gutter">1</div><textarea id="ta" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Text"></textarea></div>
+  <div class="status" id="status"></div>
+</div>
+<script src="../lib/app.js"></script>
+<script>
+(function () {
+  'use strict';
+  var el = A.el, icon = A.icon, fs = A.fs;
+  var ta = document.getElementById('ta'), gutter = document.getElementById('gutter'), ed = document.getElementById('ed');
+  var tb = document.getElementById('tb'), status = document.getElementById('status'), find = document.getElementById('find');
+  var F = { root: null, path: null, saved: '', writable: true };
+  var wrap = localStorage.getItem('editor.wrap') === '1';
+  var size = +localStorage.getItem('editor.size') || 13;
+
+  var nameEl = el('div.file-name');
+  var bSave = el('button.btn.primary', { type: 'button', onclick: function () { save(); } }, icon('save'), el('span.hide-narrow', { text: 'Speichern' }));
+  var bMore = el('button.icon-btn', { type: 'button', 'aria-label': 'Mehr' }, icon('ellipsis-vertical'));
+  bMore.addEventListener('click', function () {
+    A.menu([
+      { label: 'Neu', icon: 'file-plus', run: function () { A.open('sys:editor', null, { newWindow: true }); } },
+      { label: 'Speichern unter …', icon: 'save', run: saveAs },
+      { label: 'Suchen und ersetzen', icon: 'search', run: openFind },
+      { label: wrap ? 'Zeilenumbruch aus' : 'Zeilenumbruch an', icon: 'list', run: function () { wrap = !wrap; store('editor.wrap', wrap ? '1' : '0'); applyLook(); } },
+      { label: 'Größer', icon: 'zoom-in', run: function () { size = Math.min(24, size + 1); store('editor.size', size); applyLook(); } },
+      { label: 'Kleiner', icon: 'zoom-out', run: function () { size = Math.max(10, size - 1); store('editor.size', size); applyLook(); } },
+      F.path && /\.(html?|svg|md|png)$/i.test(F.path) ? { label: 'In der Vorschau zeigen', icon: 'eye', run: function () { A.openFile(F.root, F.path, 'sys:viewer'); } } : null,
+      F.path ? { label: 'Ordner in Dateien zeigen', icon: 'folder', run: function () { A.open('sys:files', { root: F.root, path: F.path.split('/').slice(0, -1).join('/') }); } } : null
+    ], bMore);
+  });
+  tb.append(el('span.only-narrow', null), nameEl, bSave, bMore);
+
+  function store(k, v) { try { localStorage.setItem(k, v); } catch (e) { } }
+  function applyLook() {
+    ed.classList.toggle('wrap', wrap);
+    ta.style.fontSize = gutter.style.fontSize = size + 'px';
+    lines();
+  }
+  function dirty() { return ta.value !== F.saved; }
+  window.hxDirty = dirty;
+  function name() { return F.path ? F.path.split('/').pop() : 'Unbenannt'; }
+  function renderName() {
+    A.clear(nameEl).appendChild(document.createTextNode(name()));
+    if (dirty()) nameEl.appendChild(el('small', { text: 'geändert' }));
+    if (!F.writable) nameEl.appendChild(el('small', { text: 'nur lesen' }));
+    A.setTitle(name() + (dirty() ? ' (geändert)' : ''));
+    bSave.disabled = !dirty() && !!F.path;
+  }
+  var lastLines = 0;
+  function lines() {
+    var n = ta.value.split('\n').length;
+    if (n !== lastLines) {
+      lastLines = n;
+      var s = '';
+      for (var i = 1; i <= n; i++) s += i + '\n';
+      gutter.textContent = s;
+    }
+    gutter.scrollTop = ta.scrollTop;
+  }
+  function pos() {
+    var before = ta.value.slice(0, ta.selectionStart).split('\n');
+    status.textContent = '';
+    status.append(el('span', { text: 'Zeile ' + before.length + ', Spalte ' + (before[before.length - 1].length + 1) }),
+      el('span', { text: ta.value.length.toLocaleString('de-DE') + ' Zeichen' }), el('span', { text: 'UTF-8' }));
+  }
+  ta.addEventListener('input', function () { lines(); renderName(); pos(); });
+  ta.addEventListener('scroll', function () { gutter.scrollTop = ta.scrollTop; });
+  ta.addEventListener('keyup', pos);
+  ta.addEventListener('click', pos);
+  ta.addEventListener('keydown', function (e) {
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') { e.preventDefault(); save(); return; }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'f') { e.preventDefault(); openFind(); return; }
+    if (e.key === 'Tab' && !e.ctrlKey && !e.altKey) {
+      e.preventDefault();
+      document.execCommand('insertText', false, '  ');
+    }
+  });
+
+  function load(root, path) {
+    F.root = root; F.path = path;
+    if (!path) { F.saved = ''; ta.value = ''; renderName(); lines(); pos(); return; }
+    ta.disabled = true;
+    Promise.all([fs.read(root, path, 'text'), fs.stat(root, path).catch(function () { return null; })]).then(function (r) {
+      if (r[1] && r[1].size > 6 * 1024 * 1024) throw new Error('Die Datei ist zu groß für den Editor (' + A.fmt.bytes(r[1].size) + ').');
+      F.saved = r[0]; ta.value = r[0];
+      return A.api('/api/fs/list?' + new URLSearchParams({ root: root, path: path.split('/').slice(0, -1).join('/') })).then(function (l) { F.writable = l.writable !== false; }, function () { });
+    }).catch(function (e) {
+      F.saved = ''; ta.value = '';
+      A.alert({ title: 'Datei lässt sich nicht öffnen', text: A.errText(e) });
+    }).then(function () { ta.disabled = false; renderName(); lines(); pos(); ta.focus(); ta.setSelectionRange(0, 0); });
+  }
+  function save() {
+    if (!F.path) return saveAs();
+    if (!fs) return Promise.resolve();
+    var text = ta.value;
+    return fs.write(F.root, F.path, text).then(function () { F.saved = text; renderName(); A.toast('Gespeichert'); }).catch(function (e) { A.alert({ title: 'Speichern fehlgeschlagen', text: A.errText(e) }); });
+  }
+  function saveAs() {
+    var dir = F.path ? F.path.split('/').slice(0, -1).join('/') : 'Dokumente';
+    var root = F.root || 'home';
+    return A.prompt({ title: 'Speichern unter', text: 'Im Ordner „' + (dir || 'Persönlicher Ordner') + '“. Mit / kannst du einen Unterordner angeben.', value: F.path ? name() : 'Notiz.txt', ok: 'Speichern' }).then(function (n) {
+      if (!n || !n.trim()) return;
+      var p = (dir ? dir + '/' : '') + n.trim().replace(/^\/+/, '');
+      return fs.write(root, p, ta.value, { overwrite: false }).catch(function (e) {
+        if (e.status !== 409) throw e;
+        return A.confirm({ title: '„' + n.trim() + '“ gibt es schon', text: 'Ersetzen?', ok: 'Ersetzen', danger: true }).then(function (ok) {
+          if (!ok) throw new Error('Abgebrochen');
+          return fs.write(root, p, ta.value);
+        });
+      }).then(function () { F.root = root; F.path = p; F.saved = ta.value; renderName(); A.toast('Gespeichert'); })
+        .catch(function (e) { if (e.message !== 'Abgebrochen') A.alert({ title: 'Speichern fehlgeschlagen', text: A.errText(e) }); });
+    });
+  }
+
+  /* Suchen und ersetzen */
+  var fq = el('input.field', { type: 'search', placeholder: 'Suchen', style: { maxWidth: '220px' } });
+  var fr = el('input.field', { type: 'text', placeholder: 'Ersetzen durch', style: { maxWidth: '220px' } });
+  function next() {
+    var s = fq.value; if (!s) return;
+    var v = ta.value, i = v.indexOf(s, ta.selectionEnd);
+    if (i < 0) i = v.indexOf(s);
+    if (i < 0) { A.toast('Nicht gefunden'); return; }
+    ta.focus(); ta.setSelectionRange(i, i + s.length);
+    var line = v.slice(0, i).split('\n').length;
+    ta.scrollTop = Math.max(0, (line - 4) * size * 1.6);
+  }
+  function replaceOne() {
+    if (ta.value.slice(ta.selectionStart, ta.selectionEnd) === fq.value && fq.value) { ta.focus(); document.execCommand('insertText', false, fr.value); }
+    next();
+  }
+  function replaceAll() {
+    if (!fq.value) return;
+    var n = ta.value.split(fq.value).length - 1;
+    if (!n) { A.toast('Nicht gefunden'); return; }
+    ta.focus(); ta.select();
+    document.execCommand('insertText', false, ta.value.split(fq.value).join(fr.value));
+    A.toast(n + '× ersetzt');
+  }
+  fq.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); next(); } if (e.key === 'Escape') closeFind(); });
+  find.append(fq, fr, el('button.btn', { type: 'button', text: 'Weiter', onclick: next }), el('button.btn', { type: 'button', text: 'Ersetzen', onclick: replaceOne }),
+    el('button.btn.hide-narrow', { type: 'button', text: 'Alle ersetzen', onclick: replaceAll }), el('span.grow'),
+    el('button.icon-btn', { type: 'button', 'aria-label': 'Suche schließen', onclick: closeFind }, icon('x')));
+  function openFind() { find.hidden = false; var s = ta.value.slice(ta.selectionStart, ta.selectionEnd); if (s && s.length < 80) fq.value = s; fq.focus(); fq.select(); }
+  function closeFind() { find.hidden = true; ta.focus(); }
+
+  A.onBack(function () { if (!find.hidden) { closeFind(); return true; } return false; });
+  A.onNavigate(function (p) {
+    var go = function () { load(p.get('root') || 'home', p.get('path') || ''); };
+    if (!dirty()) { go(); return; }
+    A.confirm({ title: 'Änderungen verwerfen?', text: '„' + name() + '“ hat ungespeicherte Änderungen.', ok: 'Verwerfen', danger: true }).then(function (ok) { if (ok) go(); });
+  });
+  applyLook();
+  load(A.params.get('root') || 'home', A.params.get('path') || '');
+})();
+</script>
+</body>
+</html>

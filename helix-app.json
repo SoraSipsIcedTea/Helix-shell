@@ -1,0 +1,9 @@
+{
+  "id": "helix-desktop",
+  "name": "Helix-Desktop",
+  "version": "1.0.0",
+  "role": "desktop",
+  "entry": "index.html",
+  "icon": "icons/helix.svg",
+  "update": { "url": "https://codeload.github.com/SoraSipsIcedTea/Helix-shell/zip/refs/heads/main" }
+}
