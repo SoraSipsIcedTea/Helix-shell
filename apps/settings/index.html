@@ -10,6 +10,7 @@
   .wall { position: relative; aspect-ratio: 16 / 10; border-radius: var(--r-m); border: 2px solid transparent; background: var(--abyss) center / cover; cursor: pointer; padding: 0; overflow: hidden; }
   .wall[aria-pressed="true"] { border-color: var(--teal); }
   .wall span { position: absolute; left: 8px; bottom: 6px; color: #fff; font-size: 12px; text-shadow: 0 1px 4px rgba(0,0,0,.7); }
+  .wall.up span { color: var(--paper); text-shadow: none; }
   .wall .ic { position: absolute; inset: 0; margin: auto; width: 28px; height: 28px; color: var(--mist); }
   .bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; margin-top: 8px; }
   .bar > div { height: 100%; background: linear-gradient(90deg, var(--teal), var(--peach)); }
@@ -90,7 +91,7 @@
       ['#0B1020', '#123B38', '#3A2A1E'].forEach(function (c, i) { var b = mk(c, ['Tinte', 'Tiefsee', 'Erde'][i]); b.style.background = c; });
       var own = pref('wallpaper');
       if (own && /^data:/.test(own)) mk(own, 'Eigenes Bild', 'url("' + own + '")');
-      var up = el('button.wall', { type: 'button', 'aria-label': 'Eigenes Bild wählen' }, icon('upload'), el('span', { text: 'Eigenes Bild' }));
+      var up = el('button.wall.up', { type: 'button', 'aria-label': 'Eigenes Bild wählen' }, icon('upload'), el('span', { text: 'Eigenes Bild' }));
       up.addEventListener('click', function () {
         A.pickFiles('image/*').then(function (f) {
           if (!f[0]) return;

@@ -11,6 +11,8 @@
 
   /* ================================================================== Start */
   function boot() {
+    // Sicherheitsnetz: das Startbild verschwindet auch, wenn beim Start etwas schiefgeht.
+    setTimeout(function () { var b = $('boot'); if (b) b.classList.add('gone'); }, 5000);
     WM.init();
     buildPanel();
     buildDock();
@@ -20,11 +22,9 @@
       applyMode();
       return Apps.refresh();
     }).then(function () {
-      renderDock();
-      renderDesk();
-      restoreSession();
-      hello();
-      handleStartParams();
+      [renderDock, renderDesk, restoreSession, hello, handleStartParams].forEach(function (fn) {
+        try { fn(); } catch (e) { console.error('[Helix] Start:', fn.name, e); }
+      });
       if (!HX.online) HX.notify({ title: 'Ohne Helix-Server', body: 'Der Desktop läuft als Vorschau. Apps, Dateien und Updates brauchen die Helix-App.', log: false, ms: 8000 });
       setTimeout(function () { $('boot').classList.add('gone'); }, 120);
       setTimeout(function () { $('boot').remove(); }, 700);
