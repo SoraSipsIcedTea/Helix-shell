@@ -62,7 +62,6 @@
     A.clear(stage);
     zoom = 1; panX = 0; panY = 0;
     var n = name(), k = kindOf(n), url = fs.url(V.root, V.path);
-    nameEl.textContent = n;
     A.setTitle(n);
     counter.textContent = V.siblings.length > 1 && V.i >= 0 ? (V.i + 1) + ' von ' + V.siblings.length : '';
     if (k === 'img') {

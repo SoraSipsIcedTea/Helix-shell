@@ -38,7 +38,7 @@
     window.addEventListener('message', onMessage);
     window.addEventListener('keydown', onKey);
     HX.on('apps', function () { renderDock(); renderDesk(); if (state.launcher) renderLauncher(); });
-    HX.on('windows', function () { renderDock(); if (state.overview) layoutOverview(); renderNavBadge(); });
+    HX.on('windows', function () { renderActive(); renderDock(); if (state.overview) layoutOverview(); renderNavBadge(); });
     HX.on('focus', function (w) { renderActive(w); renderDock(); });
     HX.on('title', function (w) { if (w === WM.focused()) renderActive(w); });
     HX.on('session', saveSession);
@@ -101,6 +101,7 @@
       renderDesk();
       if (state.overview) exitOverview();
       tick();
+      renderActive();
     }
     WM.layoutAll();
   }
@@ -119,10 +120,19 @@
     $('p-status').addEventListener('click', function () { openQuick($('p-status')); });
     renderStatus();
   }
+  /** Titel des Fensters im Vordergrund – nur in der Handy-Ansicht, dort ersetzt die Leiste die Titelzeile. */
   function renderActive(w) {
-    var n = $('p-active');
-    n.textContent = w ? w.title : '';
-    n.hidden = !w;
+    if (w === undefined) w = WM.focused();
+    var n = $('p-active'), c = HX.clear($('p-win'));
+    var show = !!(w && !w.min && state.mobile);
+    n.textContent = show ? w.title : '';
+    n.hidden = !show;
+    c.hidden = !show;
+    if (!show) return;
+    var more = el('button', { type: 'button', 'aria-label': 'Fenstermenü', title: 'Fenstermenü' }, icon('ellipsis-vertical'));
+    more.addEventListener('click', function () { WM.menu(w, more); });
+    c.appendChild(more);
+    c.appendChild(el('button', { type: 'button', 'aria-label': 'Fenster schließen', title: 'Schließen', onclick: function () { WM.close(w); } }, icon('x')));
   }
   var lastMin = -1;
   function tick() {

@@ -307,3 +307,13 @@ body.mobile #p-active { max-width: 30vw; }
 @media (max-width: 380px) { body.mobile #p-status span:not(.dot):not(.ic) { display: none; } }
 body.mobile.overview #desk { visibility: hidden; }
 body.mobile #overview { background: rgba(4, 6, 16, .55); }
+
+/* Ein Titel reicht: am Desktop trägt ihn die Titelzeile des Fensters, auf dem Handy die Leiste oben. */
+body.mobile .win-bar { display: none; }
+#p-win { display: inline-flex; align-items: center; gap: 0; margin-left: 2px; }
+#p-win[hidden] { display: none; }
+#panel #p-win button { width: 30px; padding: 0; justify-content: center; }
+#p-win .ic { width: 17px; height: 17px; }
+body.mobile #p-active { max-width: 34vw; font-weight: 500; color: var(--paper); }
+body.mobile #p-status > span:not(.ic):not(.dot) { display: none; }
+body.mobile #p-active { max-width: 44vw; }

@@ -38,7 +38,7 @@
 </head>
 <body>
 <div class="app">
-  <div class="toolbar only-narrow"><button class="icon-btn" id="menu" type="button" aria-label="Navigation"></button><b id="tbt" style="font-family:var(--font-display);font-weight:500">App-Center</b></div>
+  <div class="toolbar only-narrow"><button class="icon-btn" id="menu" type="button" aria-label="Navigation"></button></div>
   <div class="app-main" style="position:relative">
     <aside class="side collapsible" id="side"></aside>
     <div class="content" id="content"></div>
@@ -48,6 +48,8 @@
 <script>
 (function () {
   'use strict';
+  function noTitle() { }   // Fenstertitel bleibt „App-Center“, die Seite hat ihre eigene Überschrift
+  A.setTitle('App-Center');
   var el = A.el, icon = A.icon;
   var side = document.getElementById('side'), content = document.getElementById('content');
   var S = { apps: [], view: 'list', app: null, pkg: null };
@@ -88,7 +90,6 @@
   function show(view, arg) {
     S.view = view; S.app = view === 'app' ? arg : null;
     renderSide();
-    document.getElementById('tbt').textContent = 'App-Center';
     if (view === 'list') return viewList();
     if (view === 'add') return viewAdd(arg);
     if (view === 'desktop') return viewDesktop();
@@ -103,7 +104,7 @@
 
   /* ------------------------------------------------------------ Übersicht */
   function viewList() {
-    A.setTitle('App-Center');
+    noTitle('App-Center');
     var p = page('Deine Apps', S.apps.length ? S.apps.length + (S.apps.length === 1 ? ' App installiert' : ' Apps installiert') : 'Noch keine Apps installiert.');
     var g = el('div.group');
     S.apps.forEach(function (a) {
@@ -156,7 +157,7 @@
 
   /* ------------------------------------------------------------ Hinzufügen */
   function viewAdd(suite) {
-    A.setTitle('App hinzufügen');
+    noTitle('App hinzufügen');
     var p = page('App hinzufügen', 'Helix installiert Apps aus Paketen oder startet sie direkt aus einem Ordner.');
     if (suite && SUITE_LABEL[suite]) {
       p.appendChild(el('div.note-box.teal', null, el('b', { text: SUITE_LABEL[suite] + ' installieren' }),
@@ -203,7 +204,7 @@
     var p = page('Paket installieren'); p.appendChild(busy('Paket wird geprüft …'));
     A.api('/api/packages/' + encodeURIComponent(pid)).then(function (info) {
       S.pkg = info;
-      A.setTitle(info.label || 'Paket');
+      noTitle(info.label || 'Paket');
       p = page(info.label || info.sourceName || 'Paket');
       var meta = [info.kindLabel, info.version ? 'Version ' + info.version : '', info.roleLabel, info.files + ' Dateien', A.fmt.bytes(info.bytes)].filter(Boolean).join(', ');
       p.appendChild(el('p.lead', { text: meta }));
@@ -302,7 +303,7 @@
   function viewApp(id) {
     var a = S.apps.filter(function (x) { return x.id === id; })[0];
     if (!a) { show('list'); return; }
-    A.setTitle(a.name);
+    noTitle(a.name);
     var p = page();
     p.appendChild(el('div.hero', null, A.appIcon({ name: a.name, iconUrl: a.icon }, 72), el('div.t', null, el('h1', { text: a.name }),
       el('div.meta', null, a.version ? el('span', { text: 'Version ' + a.version }) : el('span', { text: 'Ohne Versionsangabe' }),
@@ -444,7 +445,7 @@
 
   /* ------------------------------------------------------------ Desktop */
   function viewDesktop() {
-    A.setTitle('Helix-Desktop');
+    noTitle('Helix-Desktop');
     var p = page(); p.appendChild(busy('Wird geladen …'));
     A.api('/api/desktop/info').then(function (d) {
       p = page();

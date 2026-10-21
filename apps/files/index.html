@@ -172,7 +172,6 @@
     var my = ++loadSeq;
     renderCrumbs();
     renderSide();
-    A.setTitle(S.path ? S.path.split('/').pop() : rootName(S.root));
     var p = S.query ? fs.search(S.root, S.path, S.query).then(function (r) { return { entries: r.results, writable: false, search: true, truncated: r.truncated }; })
       : fs.list(S.root, S.path);
     content.setAttribute('aria-busy', 'true');

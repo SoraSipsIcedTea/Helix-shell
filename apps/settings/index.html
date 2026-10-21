@@ -20,7 +20,7 @@
 </head>
 <body>
 <div class="app">
-  <div class="toolbar only-narrow"><button class="icon-btn" id="menu" type="button" aria-label="Navigation"></button><b id="tbt" style="font-family:var(--font-display);font-weight:500">Einstellungen</b></div>
+  <div class="toolbar only-narrow"><button class="icon-btn" id="menu" type="button" aria-label="Navigation"></button></div>
   <div class="app-main" style="position:relative">
     <aside class="side collapsible" id="side"></aside>
     <div class="content" id="content"></div>
@@ -30,6 +30,8 @@
 <script>
 (function () {
   'use strict';
+  function noTitle() { }   // Fenstertitel bleibt „Einstellungen“, die Seite hat ihre eigene Überschrift
+  A.setTitle('Einstellungen');
   var el = A.el, icon = A.icon, HX = A.HX;
   var side = document.getElementById('side'), content = document.getElementById('content');
   var PAGES = [['look', 'Darstellung', 'palette'], ['desktop', 'Desktop', 'layout-grid'], ['storage', 'Speicher', 'hard-drive'],
@@ -49,7 +51,6 @@
   function go(p) {
     cur = p; nav();
     var title = PAGES.filter(function (x) { return x[0] === p; })[0];
-    document.getElementById('tbt').textContent = title ? title[1] : 'Einstellungen';
     var page = el('div.page');
     A.clear(content).appendChild(page);
     content.scrollTop = 0;
@@ -70,7 +71,7 @@
 
   var VIEWS = {
     look: function (p) {
-      A.setTitle('Darstellung');
+      noTitle('Darstellung');
       p.append(el('h1', { text: 'Darstellung' }), el('p.lead', { text: 'Farben und Hintergrund des Desktops und der Helix-Apps.' }));
       p.appendChild(el('span.label', { text: 'Stil' }));
       p.appendChild(el('div.group', null, row('Erscheinungsbild', 'Automatisch folgt der Einstellung von Android',
@@ -102,7 +103,7 @@
       p.appendChild(walls);
     },
     desktop: function (p) {
-      A.setTitle('Desktop');
+      noTitle('Desktop');
       p.append(el('h1', { text: 'Desktop' }), el('p.lead', { text: 'Wie sich Fenster, Dock und Startseite verhalten.' }));
       p.appendChild(el('div.group', null,
         row('Ansicht', 'Handy: Fenster füllen den Bildschirm, unten eine Leiste. Automatisch wechselt ab 900 Pixel Breite.',
@@ -137,7 +138,7 @@
       } }))));
     },
     storage: function (p) {
-      A.setTitle('Speicher');
+      noTitle('Speicher');
       p.append(el('h1', { text: 'Speicher' }), el('p.lead', { text: 'Was Helix sehen darf und wie viel Platz frei ist.' }));
       var info = el('div.group'); p.appendChild(info);
       var roots = el('div.group');
@@ -169,7 +170,7 @@
       load();
     },
     shared: function (p) {
-      A.setTitle('Gemeinsame Ablagen');
+      noTitle('Gemeinsame Ablagen');
       p.append(el('h1', { text: 'Gemeinsame Ablagen' }), el('p.lead', { text: 'Über eine Ablage tauschen Apps Daten aus. Die Suiten nutzen „helix“ ohne Rückfrage, andere Apps fragen beim ersten Mal.' }));
       var box = el('div'); p.appendChild(box);
       var load = function () {
@@ -198,7 +199,7 @@
       load();
     },
     sync: function (p) {
-      A.setTitle('Sync-Anker');
+      noTitle('Sync-Anker');
       p.append(el('h1', { text: 'Sync-Anker' }), el('p.lead', { text: 'Helix kann für deine Apps im WLAN Daten zwischen Geräten abgleichen. Andere Geräte verbinden sich mit diesem Handy.' }));
       var g = el('div.group'); p.appendChild(g);
       var load = function () {
@@ -214,7 +215,7 @@
       load();
     },
     system: function (p) {
-      A.setTitle('System');
+      noTitle('System');
       p.append(el('h1', { text: 'System' }), el('p.lead', { text: 'Wie Helix auf dem Handy läuft.' }));
       var g = el('div.group'); p.appendChild(g);
       settings().then(function (s) {
@@ -231,7 +232,7 @@
         row('Helix-Desktop', 'Version, Updates, Sicherungen', el('button.btn', { type: 'button', text: 'Im App-Center', onclick: function () { A.open('sys:appcenter', { view: 'desktop' }); } }))));
     },
     about: function (p) {
-      A.setTitle('Über Helix');
+      noTitle('Über Helix');
       var logo = el('div.logo');
       logo.appendChild(HX.mark());
       logo.appendChild(el('div', null, el('h1', { text: 'Helix 2' }), el('p.muted', { text: 'Dein Web-Desktop auf dem Handy' })));

@@ -15,7 +15,7 @@
   }
   .wrap textarea { white-space: pre-wrap; word-break: break-word; }
   .wrap .gutter { display: none; }
-  .file-name { font-family: var(--font-display); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; padding: 0 6px; }
+  .file-name { display: flex; gap: 6px; align-items: center; font-family: var(--font-display); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; padding: 0 6px; }
   .file-name small { font-family: var(--font-ui); color: var(--peach); font-weight: 400; margin-left: 6px; }
   .findbar { display: flex; gap: 6px; align-items: center; padding: 6px 8px; border-bottom: 1px solid var(--line); }
   .status { display: flex; gap: 14px; padding: 5px 12px; border-top: 1px solid var(--line); color: var(--mist); font-size: 12px; flex: none; }
@@ -66,9 +66,9 @@
   window.hxDirty = dirty;
   function name() { return F.path ? F.path.split('/').pop() : 'Unbenannt'; }
   function renderName() {
-    A.clear(nameEl).appendChild(document.createTextNode(name()));
-    if (dirty()) nameEl.appendChild(el('small', { text: 'geändert' }));
-    if (!F.writable) nameEl.appendChild(el('small', { text: 'nur lesen' }));
+    A.clear(nameEl);
+    if (dirty()) nameEl.appendChild(el('span.badge.peach', { text: 'geändert' }));
+    if (!F.writable) nameEl.appendChild(el('span.badge', { text: 'nur lesen' }));
     A.setTitle(name() + (dirty() ? ' (geändert)' : ''));
     bSave.disabled = !dirty() && !!F.path;
   }
