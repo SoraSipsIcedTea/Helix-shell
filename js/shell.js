@@ -20,6 +20,7 @@
       applyTheme();
       applyWallpaper();
       applyMode();
+      layoutChrome();
       return Apps.refresh();
     }).then(function () {
       [renderDock, renderDesk, restoreSession, hello, handleStartParams].forEach(function (fn) {
@@ -35,20 +36,23 @@
     window.addEventListener('online', renderStatus);
     window.addEventListener('offline', renderStatus);
     window.addEventListener('resize', applyMode);
+    document.addEventListener('fullscreenchange', layoutChrome);
     window.addEventListener('message', onMessage);
     window.addEventListener('keydown', onKey);
     HX.on('apps', function () { renderDock(); renderDesk(); if (state.launcher) renderLauncher(); });
-    HX.on('windows', function () { renderActive(); renderDock(); if (state.overview) layoutOverview(); renderNavBadge(); });
+    HX.on('windows', function () { renderActive(); renderDock(); if (state.overview) layoutOverview(); renderNavBadge(); deskFree(); });
     HX.on('focus', function (w) { renderActive(w); renderDock(); });
     HX.on('title', function (w) { if (w === WM.focused()) renderActive(w); });
     HX.on('session', saveSession);
     HX.on('prefs', function (k) {
-      if (k === 'theme') applyTheme();
-      if (k === 'wallpaper') applyWallpaper();
+      if (k === 'theme' || k === 'accent') applyTheme();
+      if (k === 'wallpaper' || k === 'wallDim') applyWallpaper();
       if (k === 'mode') applyMode();
       if (k === 'dock') renderDock();
-      if (k === 'pins' || k === 'desktopIcons') renderDesk();
-      if (k === 'seconds') tick();
+      if (k === 'pins' || k === 'desktopIcons' || k === 'deskHidden') renderDesk();
+      if (k === 'seconds' || k === 'clockDate') tick();
+      if (k === 'batteryPct') renderStatus();
+      if (CHROME_KEYS.indexOf(k) >= 0) layoutChrome();
     });
   }
 
@@ -60,20 +64,39 @@
     if (t === 'auto') return dark && !dark.matches ? 'light' : 'dark';
     return t === 'light' ? 'light' : 'dark';
   }
+  /* Akzentfarbe (Strang 1). Je Farbe eine Variante für Dunkel und Hell, damit Text darauf lesbar bleibt. */
+  var ACCENTS = HX.accents = [
+    { id: 'tuerkis', name: 'Türkis', dark: ['#2DD4BF', '#062A26'], light: ['#0F9C8C', '#FFFFFF'] },
+    { id: 'blau', name: 'Blau', dark: ['#7DA2FF', '#0A1640'], light: ['#3559C9', '#FFFFFF'] },
+    { id: 'violett', name: 'Violett', dark: ['#C79BFF', '#24104A'], light: ['#7A45C9', '#FFFFFF'] },
+    { id: 'rosa', name: 'Rosa', dark: ['#FF9AB8', '#3F0E1E'], light: ['#C2416A', '#FFFFFF'] },
+    { id: 'gruen', name: 'Grün', dark: ['#8FE07A', '#10300A'], light: ['#3C8F2A', '#FFFFFF'] },
+    { id: 'gold', name: 'Gold', dark: ['#F2C95C', '#3A2A05'], light: ['#A87A0E', '#FFFFFF'] }
+  ];
+  function accentNow() {
+    var a = ACCENTS.filter(function (x) { return x.id === HX.prefs.get('accent'); })[0] || ACCENTS[0];
+    return themeNow() === 'light' ? a.light : a.dark;
+  }
+  function paintAccent(root) {
+    var v = accentNow();
+    root.style.setProperty('--teal', v[0]);
+    root.style.setProperty('--teal-ink', v[1]);
+  }
   function applyTheme() {
     var t = themeNow();
     document.documentElement.setAttribute('data-theme', t);
+    paintAccent(document.documentElement);
     var meta = document.querySelector('meta[name="theme-color"]');
     if (meta) meta.setAttribute('content', t === 'light' ? '#F6F8FB' : '#0B1020');
     WM.wins.forEach(function (w) {
       if (w.app.system) applyThemeTo(w.frame.contentWindow);
-      else WM.post(w, 'theme', { theme: t }, 100);
+      else WM.post(w, 'theme', { theme: t, accent: accentNow()[0] }, 100);
     });
     if (H) HX.api('/api/system/bars', { method: 'POST', json: { light: t === 'light' } }).catch(function () { });
     HX.emit('theme', t);
   }
   function applyThemeTo(cw) {
-    try { cw.document.documentElement.setAttribute('data-theme', themeNow()); } catch (e) { }
+    try { cw.document.documentElement.setAttribute('data-theme', themeNow()); paintAccent(cw.document.documentElement); } catch (e) { }
   }
   HX.on('theme-apply', applyThemeTo);
   HX.theme = themeNow;
@@ -90,6 +113,7 @@
       bg = 'url("wallpapers/' + (ok ? w : 'nacht') + '.jpg")';
     }
     $('wallpaper').style.background = (bg.charAt(0) === '#' ? bg : bg + ' center / cover no-repeat, var(--abyss)');
+    document.documentElement.style.setProperty('--wall-dim', String([0, .22, .42][HX.prefs.get('wallDim') | 0] || 0));
   }
 
   function applyMode() {
@@ -102,8 +126,94 @@
       if (state.overview) exitOverview();
       tick();
       renderActive();
+      renderDock();
     }
+    layoutChrome();
+  }
+
+  /* ================================================================== Leisten und Dock: Maße und Lage
+   * Alles, was Fenster und Arbeitsfläche an Platz kostet, rechnet layoutChrome() aus und legt es als
+   * CSS-Variablen ab: --top (Inhalt beginnt), --res-* (Platz, den Fenster frei lassen), --dres-* (Platz, den
+   * die Arbeitsfläche frei lässt). WM.area() liest dieselben Werte. */
+  var SIZES = {
+    bars: { kompakt: { panel: 28, nav: 50, bar: 32 }, normal: { panel: 34, nav: 60, bar: 40 } },
+    dock: { klein: { w: 54, item: 42, icon: 30 }, mittel: { w: 66, item: 52, icon: 40 }, gross: { w: 80, item: 64, icon: 50 } },
+    icons: { klein: { icon: 38, cell: 80, home: 46 }, mittel: { icon: 48, cell: 92, home: 54 }, gross: { icon: 60, cell: 108, home: 64 } }
+  };
+  var CHROME_KEYS = ['bars', 'panelHide', 'clockPos', 'dockPos', 'dockMode', 'dockSize', 'mobileDock', 'iconSize'];
+  var ins = { top: 0, bottom: 0, left: 0, right: 0, fs: null, cut: null };
+  /** Vollbild: Android meldet es mit (Statusleiste weg); ältere Helix-Versionen nur über die Fullscreen-API. */
+  function fullscreen() { return ins.fs != null ? !!ins.fs : !!document.fullscreenElement; }
+  function layoutChrome() {
+    var P = HX.prefs.get(), root = document.documentElement, b = document.body;
+    var set = function (k, v) { root.style.setProperty(k, v + 'px'); };
+    var bars = SIZES.bars[P.bars] || SIZES.bars.kompakt;
+    var dk = SIZES.dock[P.dockSize] || SIZES.dock.mittel;
+    var ic = SIZES.icons[P.iconSize] || SIZES.icons.mittel;
+    var mob = state.mobile, fs = fullscreen(), sat = ins.top;
+    var hide = P.panelHide === 'immer' || (P.panelHide === 'vollbild' && fs);
+    // Im Vollbild ist oben nur noch der Streifen der Kamera-Aussparung. Die Leiste rückt hinein, statt darunter.
+    var merged = fs && sat > 0 && !hide;
+    var total = merged ? Math.max(bars.panel, sat) : bars.panel + sat;
+    set('--panel-h', bars.panel); set('--panel-pt', merged ? 0 : sat); set('--panel-total', total);
+    set('--top', hide ? sat : total);
+    set('--nav-h', bars.nav); set('--bar-h', bars.bar);
+    set('--dock-w', dk.w); set('--dock-item', dk.item); set('--dock-icon', dk.icon);
+    set('--desk-icon', ic.icon); set('--desk-cell', ic.cell); set('--home-icon', ic.home);
+    // Aussparung im Streifen: Leiste weicht ihr aus (Mitte: Uhr nach rechts, links nur bis zur Kamera).
+    root.style.removeProperty('--cut-pl'); root.style.removeProperty('--cut-pr'); root.style.removeProperty('--cut-lmax');
+    var clockRight = P.clockPos === 'rechts';
+    if (merged) {
+      var W = window.innerWidth, c = ins.cut;
+      if (c && c.r > c.l) {
+        var mid = (c.l + c.r) / 2;
+        if (mid < W * 0.3) set('--cut-pl', Math.max(0, c.r + 4 - ins.left));
+        else if (mid > W * 0.7) set('--cut-pr', Math.max(0, W - c.l + 4 - ins.right));
+        else { clockRight = true; set('--cut-lmax', Math.max(60, c.l - 16 - ins.left)); }
+      } else clockRight = true;   // Lage unbekannt: die Mitte frei lassen, dort sitzt meist die Kamera
+    }
+    // Dock: Lage und ob Fenster daneben, darüber oder bei ausgeblendetem Dock liegen
+    var pos = P.dockPos === 'unten' || P.dockPos === 'rechts' ? P.dockPos : 'links';
+    var mode = P.dockMode === 'ueber' || P.dockMode === 'auto' ? P.dockMode : 'neben';
+    var space = dk.w + 16, dres = { l: 0, r: 0, b: 0 };
+    if (mob) dres.b = bars.nav;
+    else if (pos === 'unten') dres.b = space; else if (pos === 'rechts') dres.r = space; else dres.l = space;
+    var res = mob || mode === 'neben' ? dres : { l: 0, r: 0, b: 0 };
+    ['l', 'r', 'b'].forEach(function (k) { set('--res-' + k, res[k]); set('--dres-' + k, dres[k]); });
+    var cls = {
+      'bars-normal': P.bars === 'normal', 'panel-hidden': hide, 'panel-merged': merged, 'clock-right': clockRight,
+      'dock-left': !mob && pos === 'links', 'dock-bottom': !mob && pos === 'unten', 'dock-right': !mob && pos === 'rechts',
+      'dock-over': !mob && mode === 'ueber', 'dock-auto': !mob && mode === 'auto', 'mdock': mob && !!P.mobileDock
+    };
+    Object.keys(cls).forEach(function (k) { b.classList.toggle(k, cls[k]); });
+    if (!hide) b.classList.remove('panel-peek');
+    deskFree();
     WM.layoutAll();
+    if (state.overview) layoutOverview();
+  }
+  shell.layout = layoutChrome;
+  /** Ohne sichtbare Fenster zeigt sich ein ausgeblendetes Dock von selbst. */
+  function deskFree() { document.body.classList.toggle('desk-free', !WM.visible().length); }
+
+  /* Leiste oben hervorholen (wenn ausgeblendet): Griff antippen oder mit der Maus an den oberen Rand */
+  var peekT = null;
+  function peekPanel(on, ms) {
+    clearTimeout(peekT);
+    document.body.classList.toggle('panel-peek', !!on && document.body.classList.contains('panel-hidden'));
+    if (on && ms) peekT = setTimeout(function again() {
+      if (HX.layers.length) { peekT = setTimeout(again, 1200); return; }   // solange ein Menü der Leiste offen ist
+      document.body.classList.remove('panel-peek');
+    }, ms);
+  }
+  /* Dock hervorholen (Fenster über dem Dock oder Dock ausgeblendet): an den Rand zeigen oder tippen */
+  var dockT = null;
+  function peekDock(on, ms) {
+    clearTimeout(dockT);
+    document.body.classList.toggle('dock-peek', !!on);
+    if (on && ms) dockT = setTimeout(function again() {
+      if (HX.layers.length) { dockT = setTimeout(again, 1200); return; }
+      document.body.classList.remove('dock-peek');
+    }, ms);
   }
   shell.isMobile = function () { return state.mobile; };
 
@@ -118,7 +228,48 @@
     });
     $('p-clock').addEventListener('click', function () { openCalendar($('p-clock')); });
     $('p-status').addEventListener('click', function () { openQuick($('p-status')); });
+    var panel = $('panel');
+    panel.addEventListener('pointerenter', function () { if (document.body.classList.contains('panel-peek')) clearTimeout(peekT); });
+    panel.addEventListener('pointerleave', function (e) { if (e.pointerType === 'mouse') peekPanel(true, 700); });
+    panel.addEventListener('contextmenu', function (e) {
+      if (e.target.closest('button')) return;
+      e.preventDefault();
+      barsMenu({ x: e.clientX, y: e.clientY });
+    });
+    var grip = el('button', { id: 'p-grip', type: 'button', 'aria-label': 'Leiste oben zeigen', title: 'Leiste zeigen' }, el('span'));
+    grip.addEventListener('click', function () { peekPanel(true, 4000); });
+    var edge = el('div', { id: 'p-edge', 'aria-hidden': 'true' });
+    // Maus an den Rand: zeigen; wer nicht in die Leiste fährt, sieht sie nach kurzer Zeit wieder verschwinden.
+    edge.addEventListener('pointerenter', function (e) { if (e.pointerType === 'mouse') peekPanel(true, 1500); });
+    document.body.appendChild(grip);
+    document.body.appendChild(edge);
     renderStatus();
+  }
+  /** Schnellwahl für Leisten und Dock (Rechtsklick auf die Leiste oder den Dock-Hintergrund). */
+  function barsMenu(at) {
+    var P = HX.prefs.get(), items = [];
+    var pick = function (k, v, label, ic) { items.push({ label: label + (P[k] === v ? '  ✓' : ''), icon: ic, run: function () { HX.prefs.set(k, v); } }); };
+    items.push({ head: 'Leisten' });
+    pick('bars', 'kompakt', 'Kompakt', 'minimize-2');
+    pick('bars', 'normal', 'Normal', 'maximize-2');
+    pick('panelHide', 'nie', 'Leiste oben immer zeigen', 'panel-top');
+    pick('panelHide', 'vollbild', 'Im Vollbild ausblenden', 'panel-top');
+    pick('panelHide', 'immer', 'Immer ausblenden', 'eye-off');
+    if (!state.mobile) {
+      items.push('-'); items.push({ head: 'Dock' });
+      pick('dockPos', 'links', 'Links', 'panel-left');
+      pick('dockPos', 'unten', 'Unten', 'panel-bottom');
+      pick('dockPos', 'rechts', 'Rechts', 'panel-right');
+      pick('dockMode', 'neben', 'Fenster neben dem Dock', 'app-window');
+      pick('dockMode', 'ueber', 'Fenster über dem Dock', 'layers');
+      pick('dockMode', 'auto', 'Dock ausblenden', 'eye-off');
+    } else {
+      items.push('-');
+      items.push({ label: 'Favoritenleiste unten' + (P.mobileDock ? '  ✓' : ''), icon: 'star', run: function () { HX.prefs.set('mobileDock', !P.mobileDock); } });
+    }
+    items.push('-');
+    items.push({ label: 'Desktop anpassen …', icon: 'sliders-horizontal', run: function () { shell.openApp('sys:settings', { page: 'desktop' }); } });
+    HX.menu(items, at);
   }
   /** Titel des Fensters im Vordergrund – nur in der Handy-Ansicht, dort ersetzt die Leiste die Titelzeile. */
   function renderActive(w) {
@@ -137,7 +288,8 @@
   var lastMin = -1;
   function tick() {
     var d = new Date(), sec = HX.prefs.get('seconds');
-    $('p-clock').textContent = (state.mobile ? '' : d.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' }) + '  ') + HX.fmt.time(d, sec);
+    var date = !state.mobile && HX.prefs.get('clockDate') !== false;
+    $('p-clock').textContent = (date ? d.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' }) + '  ' : '') + HX.fmt.time(d, sec);
     if (d.getMinutes() !== lastMin) {
       lastMin = d.getMinutes();
       var hc = document.querySelector('.home-clock'), hd = document.querySelector('.home-date');
@@ -162,7 +314,7 @@
     var b = state.battery;
     if (b) {
       s.appendChild(icon(b.charging ? 'battery-charging' : 'battery'));
-      s.appendChild(el('span', { text: Math.round(b.level * 100) + ' %' }));
+      if (HX.prefs.get('batteryPct') !== false) s.appendChild(el('span', { text: Math.round(b.level * 100) + ' %' }));
     }
     s.appendChild(icon('power'));
     s.setAttribute('aria-label', 'Schnelleinstellungen');
@@ -171,6 +323,17 @@
   /* ================================================================== Dock */
   function buildDock() {
     var d = $('dock');
+    d.addEventListener('pointerenter', function () { clearTimeout(dockT); });
+    d.addEventListener('pointerleave', function (e) { if (e.pointerType === 'mouse' && document.body.classList.contains('dock-peek')) peekDock(true, 600); });
+    d.addEventListener('contextmenu', function (e) {
+      if (e.target.closest('.dock-item, .nav-btn')) return;
+      e.preventDefault();
+      barsMenu({ x: e.clientX, y: e.clientY });
+    });
+    var edge = el('div', { id: 'dock-edge', 'aria-hidden': 'true' });
+    edge.addEventListener('pointerenter', function (e) { if (e.pointerType === 'mouse') peekDock(true, 1500); });
+    edge.addEventListener('click', function () { peekDock(true, 4000); });
+    document.body.appendChild(edge);
     d.appendChild(el('div.dock-list', { id: 'dock-list' }));
     d.appendChild(el('div.sep'));
     var grid = el('button.dock-item.grid-btn', { type: 'button', 'aria-label': 'Alle Apps', title: 'Alle Apps' },
@@ -209,7 +372,7 @@
       if (!app) return;
       var running = WM.ofApp(id).length > 0;
       var b = el('button.dock-item', { type: 'button', title: app.name, 'aria-label': app.name,
-        class: (running ? 'running' : '') + (f && f.app.id === id ? ' focused' : '') }, el('span.run'), HX.appIcon(app, 40));
+        class: (running ? 'running' : '') + (f && f.app.id === id ? ' focused' : '') }, el('span.run'), HX.appIcon(app));
       b.addEventListener('click', function () { dockClick(app); });
       longPress(b, function (at) { appMenu(app, at); });
       list.appendChild(b);
@@ -217,6 +380,7 @@
     renderNavBadge();
   }
   function dockClick(app) {
+    if (document.body.classList.contains('dock-peek')) peekDock(true, 900);
     var ws = WM.ofApp(app.id);
     if (!ws.length) { shell.openApp(app.id); return; }
     var f = WM.focused();
@@ -232,11 +396,20 @@
   /** Langes Drücken (Touch) oder Rechtsklick → Menü. */
   function longPress(n, fn) {
     var t = null, fired = false, sx = 0, sy = 0;
-    n.addEventListener('contextmenu', function (e) { e.preventDefault(); if (!fired) fn({ x: e.clientX, y: e.clientY }); });
+    // Android schickt nach langem Drücken selbst ein contextmenu – wer zuerst kommt, öffnet das Menü, der andere nicht mehr.
+    n.addEventListener('contextmenu', function (e) {
+      e.preventDefault();
+      clearTimeout(t);
+      if (fired) return;
+      fired = true;
+      fn({ x: e.clientX, y: e.clientY });
+    });
     n.addEventListener('pointerdown', function (e) {
+      fired = false;
+      clearTimeout(t);
       if (e.pointerType === 'mouse') return;
-      fired = false; sx = e.clientX; sy = e.clientY;
-      t = setTimeout(function () { fired = true; fn({ x: sx, y: sy }); if (navigator.vibrate) navigator.vibrate(12); }, 520);
+      sx = e.clientX; sy = e.clientY;
+      t = setTimeout(function () { if (fired) return; fired = true; fn({ x: sx, y: sy }); if (navigator.vibrate) navigator.vibrate(12); }, 520);
     });
     var cancel = function (e) { if (e && e.type === 'pointermove' && Math.abs(e.clientX - sx) + Math.abs(e.clientY - sy) < 10) return; clearTimeout(t); };
     n.addEventListener('pointermove', cancel);
@@ -262,6 +435,13 @@
       if (!pinned) d.push(app.id);
       HX.prefs.set('dock', d);
     } });
+    var hidden = (HX.prefs.get('deskHidden') || []).indexOf(app.id) >= 0;
+    var where = state.mobile ? 'Startseite' : 'Desktop';
+    items.push({ label: hidden ? 'Auf ' + (state.mobile ? 'der Startseite' : 'dem Desktop') + ' zeigen' : (state.mobile ? 'Von der ' : 'Vom ') + where + ' entfernen', icon: hidden ? 'eye' : 'eye-off', run: function () {
+      var h = (HX.prefs.get('deskHidden') || []).filter(function (x) { return x !== app.id; });
+      if (!hidden) h.push(app.id);
+      HX.prefs.set('deskHidden', h);
+    } });
     if (!app.system) {
       items.push({ label: 'Auf den Startbildschirm', icon: 'smartphone', run: function () { shell.homeShortcut(app, app.url, app.name); } });
       items.push({ label: 'App-Infos', icon: 'info', run: function () { shell.openApp('sys:appcenter', { app: (app.pkg || app).id }); } });
@@ -281,12 +461,13 @@
     var g = el('div.desk-icons');
     var files = Apps.get('sys:files');
     g.appendChild(deskIcon({ id: 'home', name: 'Persönlicher Ordner', glyph: 'house', colors: files.colors }, function () { shell.openApp('sys:files', { root: 'home' }); }));
-    Apps.installed().forEach(function (a) { g.appendChild(deskIcon(a, function () { shell.openApp(a.id); }, true)); });
+    Apps.installed().filter(shown).forEach(function (a) { g.appendChild(deskIcon(a, function () { shell.openApp(a.id); }, true)); });
     (HX.prefs.get('pins') || []).forEach(function (p, i) { g.appendChild(pinIcon(p, i)); });
     d.appendChild(g);
   }
+  function shown(a) { return (HX.prefs.get('deskHidden') || []).indexOf(a.id) < 0; }
   function deskIcon(app, run, menu) {
-    var b = el('button.desk-icon', { type: 'button' }, HX.appIcon(app, 48), el('span.label', { text: app.name }));
+    var b = el('button.desk-icon', { type: 'button' }, HX.appIcon(app), el('span.label', { text: app.name }));
     b.addEventListener(state.mobile ? 'click' : 'dblclick', run);
     if (!state.mobile) b.addEventListener('keydown', function (e) { if (e.key === 'Enter') run(); });
     if (menu) longPress(b, function (at) { appMenu(app, at); });
@@ -334,7 +515,7 @@
       el('div.home-clock', { text: HX.fmt.time(d) }),
       el('div.home-date', { text: HX.fmt.day(d) }));
     var pins = HX.prefs.get('pins') || [];
-    var groups = groupApps(Apps.installed());
+    var groups = groupApps(Apps.installed().filter(shown));
     if (!groups.length && !pins.length) {
       v.appendChild(el('h2', { text: 'Deine Apps' }));
       v.appendChild(el('div.suite', { role: 'button', tabindex: '0', onclick: function () { shell.openApp('sys:appcenter'); } },
@@ -357,7 +538,7 @@
     }
     v.appendChild(el('h2', { text: 'Helix' }));
     var sg = el('div.home-grid');
-    Apps.system.forEach(function (a) { sg.appendChild(deskIcon(a, function () { shell.openApp(a.id); }, true)); });
+    Apps.system.filter(shown).forEach(function (a) { sg.appendChild(deskIcon(a, function () { shell.openApp(a.id); }, true)); });
     v.appendChild(sg);
     return v;
   }
@@ -725,14 +906,17 @@
       }
       return false;
     },
+    /** Ränder von Android in CSS-Pixeln. fs: Statusleiste ausgeblendet (Vollbild). cut: {l, r} – waagrechte
+     *  Lage der Kamera-Aussparung am oberen Rand, falls es eine gibt. */
     insets: function (i) {
       var r = document.documentElement.style;
-      r.setProperty('--sat', (i.top || 0) + 'px');
-      r.setProperty('--sab', (i.bottom || 0) + 'px');
-      r.setProperty('--sal', (i.left || 0) + 'px');
-      r.setProperty('--sar', (i.right || 0) + 'px');
-      WM.layoutAll();
-      if (state.overview) layoutOverview();
+      ins = { top: i.top || 0, bottom: i.bottom || 0, left: i.left || 0, right: i.right || 0,
+        fs: typeof i.fs === 'boolean' ? i.fs : null, cut: i.cut && i.cut.r > i.cut.l ? i.cut : null };
+      r.setProperty('--sat', ins.top + 'px');
+      r.setProperty('--sab', ins.bottom + 'px');
+      r.setProperty('--sal', ins.left + 'px');
+      r.setProperty('--sar', ins.right + 'px');
+      layoutChrome();
     },
     openUrl: openUrl
   };
@@ -751,7 +935,7 @@
         WM.setState(w, a);
         if (!w.ready) {
           w.ready = true;
-          WM.post(w, 'theme', { theme: themeNow() }, 100);   // Apps können Hell/Dunkel übernehmen
+          WM.post(w, 'theme', { theme: themeNow(), accent: accentNow()[0] }, 100);   // Apps können Hell/Dunkel übernehmen
           HX.emit('ready', w);
         }
         break;
@@ -833,8 +1017,14 @@
     $('desk').addEventListener('contextmenu', function (e) {
       if (e.target.closest('.desk-icon') || state.mobile) return;
       e.preventDefault();
+      var iconsOn = HX.prefs.get('desktopIcons') !== false, sz = HX.prefs.get('iconSize') || 'mittel';
       HX.menu([
+        { label: 'Desktop anpassen …', icon: 'sliders-horizontal', run: function () { shell.openApp('sys:settings', { page: 'desktop' }); } },
         { label: 'Hintergrund ändern', icon: 'image', run: function () { shell.openApp('sys:settings', { page: 'look' }); } },
+        '-',
+        { label: iconsOn ? 'Symbole ausblenden' : 'Symbole zeigen', icon: iconsOn ? 'eye-off' : 'eye', run: function () { HX.prefs.set('desktopIcons', !iconsOn); } },
+        iconsOn ? { label: sz === 'gross' ? 'Kleinere Symbole' : 'Größere Symbole', icon: sz === 'gross' ? 'zoom-out' : 'zoom-in', run: function () { HX.prefs.set('iconSize', sz === 'klein' ? 'mittel' : sz === 'mittel' ? 'gross' : 'mittel'); } } : null,
+        '-',
         { label: 'Dateien', icon: 'folder', run: function () { shell.openApp('sys:files'); } },
         { label: 'Desktop neu laden', icon: 'refresh-cw', run: reloadDesktop }
       ], { x: e.clientX, y: e.clientY });

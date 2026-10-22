@@ -16,6 +16,13 @@
   .bar > div { height: 100%; background: linear-gradient(90deg, var(--teal), var(--peach)); }
   .logo { display: flex; align-items: center; gap: 14px; margin-bottom: 16px; }
   .logo svg { width: 64px; height: 64px; }
+  .accents { display: flex; flex-wrap: wrap; gap: 10px; }
+  .accent { width: 34px; height: 34px; border-radius: 50%; border: 2px solid transparent; padding: 3px; background: none; cursor: pointer; }
+  .accent span { display: block; width: 100%; height: 100%; border-radius: 50%; }
+  .accent[aria-pressed="true"] { border-color: var(--paper); }
+  .row.stack { flex-wrap: wrap; }
+  .row.stack .seg { margin-left: auto; }
+  .hint { color: var(--mist); font-size: 12px; margin: -4px 4px 14px; }
 </style>
 </head>
 <body>
@@ -74,8 +81,24 @@
       noTitle('Darstellung');
       p.append(el('h1', { text: 'Darstellung' }), el('p.lead', { text: 'Farben und Hintergrund des Desktops und der Helix-Apps.' }));
       p.appendChild(el('span.label', { text: 'Stil' }));
-      p.appendChild(el('div.group', null, row('Erscheinungsbild', 'Automatisch folgt der Einstellung von Android',
-        A.seg([['dark', 'Dunkel'], ['light', 'Hell'], ['auto', 'Automatisch']], pref('theme'), function (v) { setPref('theme', v); }))));
+      var acc = el('div.accents', { role: 'group', 'aria-label': 'Akzentfarbe' });
+      var light = HX.theme() === 'light';
+      HX.accents.forEach(function (a) {
+        var b = el('button.accent', { type: 'button', title: a.name, 'aria-label': a.name, 'aria-pressed': String((pref('accent') || 'tuerkis') === a.id) },
+          el('span', { style: { background: (light ? a.light : a.dark)[0] } }));
+        b.addEventListener('click', function () {
+          Array.prototype.forEach.call(acc.children, function (x) { x.setAttribute('aria-pressed', 'false'); });
+          b.setAttribute('aria-pressed', 'true');
+          setPref('accent', a.id);
+        });
+        acc.appendChild(b);
+      });
+      p.appendChild(el('div.group', null,
+        row('Erscheinungsbild', 'Automatisch folgt der Einstellung von Android',
+          A.seg([['dark', 'Dunkel'], ['light', 'Hell'], ['auto', 'Automatisch']], pref('theme'), function (v) { setPref('theme', v); })),
+        el('div.row.stack', null, el('div.t', null, el('b', { text: 'Akzentfarbe' }), el('small', { text: 'Fokus, Schalter und Auswahl im Desktop und in den Helix-Apps' })), acc),
+        row('Hintergrund abdunkeln', 'Macht Symbole und Schrift auf hellen Bildern lesbarer',
+          A.seg([[0, 'Aus'], [1, 'Leicht'], [2, 'Stark']], pref('wallDim') | 0, function (v) { setPref('wallDim', v); }))));
       p.appendChild(el('span.label', { text: 'Hintergrund' }));
       var walls = el('div.walls');
       var mk = function (id, name, bg) {
@@ -104,31 +127,66 @@
     },
     desktop: function (p) {
       noTitle('Desktop');
-      p.append(el('h1', { text: 'Desktop' }), el('p.lead', { text: 'Wie sich Fenster, Dock und Startseite verhalten.' }));
+      var re = function () { var y = content.scrollTop; go('desktop'); content.scrollTop = y; };
+      var seg = function (k, opts, after) { return A.seg(opts, pref(k), function (v) { setPref(k, v); if (after) after(v); }); };
+      var tog = function (k, def, after) { return A.toggle(def ? pref(k) !== false : !!pref(k), function (v) { setPref(k, v); if (after) after(v); }); };
+      p.append(el('h1', { text: 'Desktop' }), el('p.lead', { text: 'Wie Leisten, Dock, Fenster und Startseite aussehen und sich verhalten. Vieles davon erreichst du auch per Rechtsklick oder langem Drücken auf die Leiste oben, das Dock oder den Desktop.' }));
+
       p.appendChild(el('div.group', null,
-        row('Ansicht', 'Handy: Fenster füllen den Bildschirm, unten eine Leiste. Automatisch wechselt ab 900 Pixel Breite.',
-          A.seg([['auto', 'Automatisch'], ['desktop', 'Desktop'], ['mobile', 'Handy']], pref('mode'), function (v) { setPref('mode', v); })),
-        row('Symbole auf dem Desktop', 'Apps und Direktlinks auf der Arbeitsfläche', A.toggle(pref('desktopIcons') !== false, function (v) { setPref('desktopIcons', v); })),
-        row('Sekunden in der Uhr', null, A.toggle(!!pref('seconds'), function (v) { setPref('seconds', v); })),
-        row('Fenster wiederherstellen', 'Nach dem Neustart öffnen sich die Fenster der letzten Sitzung', A.toggle(pref('restore') !== false, function (v) { setPref('restore', v); }))));
-      p.appendChild(el('span.label', { text: 'Dock' }));
+        row('Ansicht', 'Handy: Fenster füllen den Bildschirm, unten eine Leiste. Automatisch wechselt ab 900 Pixel Breite.', seg('mode', [['auto', 'Automatisch'], ['desktop', 'Desktop'], ['mobile', 'Handy']])),
+        row('Fenster wiederherstellen', 'Nach dem Neustart öffnen sich die Fenster der letzten Sitzung', tog('restore', true))));
+
+      p.appendChild(el('span.label', { text: 'Leisten' }));
+      p.appendChild(el('div.group', null,
+        row('Größe', 'Höhe der Leiste oben, der Leiste unten und der Fenster-Titelzeilen', seg('bars', [['kompakt', 'Kompakt'], ['normal', 'Normal']])),
+        row('Leiste oben ausblenden', 'Ausgeblendet holst du sie mit dem Griff oben in der Mitte zurück, mit der Maus am oberen Rand. Im Vollbild rückt sie sonst in den Streifen neben der Kamera.',
+          seg('panelHide', [['nie', 'Nie'], ['vollbild', 'Im Vollbild'], ['immer', 'Immer']])),
+        row('Uhr', null, seg('clockPos', [['mitte', 'Mitte'], ['rechts', 'Rechts']])),
+        row('Datum neben der Uhr', 'In der Desktop-Ansicht', tog('clockDate', true)),
+        row('Sekunden in der Uhr', null, tog('seconds', false)),
+        row('Akku in Prozent', null, tog('batteryPct', true))));
+
+      p.appendChild(el('span.label', { text: 'Dock (Desktop-Ansicht)' }));
+      p.appendChild(el('div.group', null,
+        row('Lage', null, seg('dockPos', [['links', 'Links'], ['unten', 'Unten'], ['rechts', 'Rechts']])),
+        row('Fenster', 'Neben dem Dock: Fenster lassen das Dock frei. Über dem Dock: Fenster nutzen die ganze Breite und liegen über dem Dock. Ausblenden: das Dock zeigt sich am Rand oder auf dem leeren Desktop.',
+          seg('dockMode', [['neben', 'Neben dem Dock'], ['ueber', 'Über dem Dock'], ['auto', 'Ausblenden']])),
+        row('Größe', null, seg('dockSize', [['klein', 'Klein'], ['mittel', 'Mittel'], ['gross', 'Groß']]))));
       var g = el('div.group');
       var dock = (pref('dock') || []).slice();
       dock.forEach(function (id, i) {
         var a = HX.apps.get(id);
         if (!a) return;
         g.appendChild(el('div.row', null, A.appIcon({ name: a.name, iconUrl: a.iconUrl, glyph: a.glyph, colors: a.colors }, 32), el('div.t', null, el('b', { text: a.name })),
-          el('button.icon-btn', { type: 'button', 'aria-label': 'Nach oben', disabled: i === 0, onclick: function () { var d = dock.slice(); d.splice(i - 1, 0, d.splice(i, 1)[0]); setPref('dock', d); go('desktop'); } }, icon('chevron-up')),
-          el('button.icon-btn', { type: 'button', 'aria-label': 'Entfernen', onclick: function () { setPref('dock', dock.filter(function (x) { return x !== id; })); go('desktop'); } }, icon('x'))));
+          el('button.icon-btn', { type: 'button', 'aria-label': 'Nach oben', disabled: i === 0, onclick: function () { var d = dock.slice(); d.splice(i - 1, 0, d.splice(i, 1)[0]); setPref('dock', d); re(); } }, icon('chevron-up')),
+          el('button.icon-btn', { type: 'button', 'aria-label': 'Entfernen', onclick: function () { setPref('dock', dock.filter(function (x) { return x !== id; })); re(); } }, icon('x'))));
       });
       g.appendChild(el('div.row.click', { role: 'button', onclick: function (e) {
         var avail = HX.apps.all().filter(function (a) { return dock.indexOf(a.id) < 0; });
-        A.menu(avail.map(function (a) { return { label: a.name, run: function () { setPref('dock', dock.concat([a.id])); go('desktop'); } }; }), e.currentTarget);
-      } }, icon('plus'), el('div.t', null, el('b', { text: 'App zum Dock hinzufügen' }))));
+        A.menu(avail.map(function (a) { return { label: a.name, run: function () { setPref('dock', dock.concat([a.id])); re(); } }; }), e.currentTarget);
+      } }, icon('plus'), el('div.t', null, el('b', { text: 'App zum Dock hinzufügen' }), el('small', { text: 'Angeheftete Apps erscheinen im Dock und in der Favoritenleiste am Handy' }))));
       p.appendChild(g);
+
+      p.appendChild(el('span.label', { text: 'Handy-Ansicht' }));
+      p.appendChild(el('div.group', null,
+        row('Favoritenleiste', 'Angeheftete Apps und offene Fenster in der Leiste unten, zwischen Start und Fenster', tog('mobileDock', false))));
+
+      p.appendChild(el('span.label', { text: 'Arbeitsfläche und Startseite' }));
+      var hidden = (pref('deskHidden') || []).map(function (id) { return HX.apps.get(id); }).filter(Boolean);
+      var ag = el('div.group', null,
+        row('Symbole auf dem Desktop', 'Apps und Direktlinks auf der Arbeitsfläche', tog('desktopIcons', true)),
+        row('Symbolgröße', 'Desktop und Startseite', seg('iconSize', [['klein', 'Klein'], ['mittel', 'Mittel'], ['gross', 'Groß']])));
+      hidden.forEach(function (a) {
+        ag.appendChild(el('div.row', null, A.appIcon({ name: a.name, iconUrl: a.iconUrl, glyph: a.glyph, colors: a.colors }, 32),
+          el('div.t', null, el('b', { text: a.name }), el('small', { text: 'Ausgeblendet' })),
+          el('button.btn', { type: 'button', text: 'Wieder zeigen', onclick: function () { setPref('deskHidden', (pref('deskHidden') || []).filter(function (x) { return x !== a.id; })); re(); } })));
+      });
+      p.appendChild(ag);
+      if (!hidden.length) p.appendChild(el('p.hint', { text: 'Einzelne Apps nimmst du über langes Drücken oder Rechtsklick auf ihr Symbol vom Desktop.' }));
+
       p.appendChild(el('span.label', { text: 'Zurücksetzen' }));
-      p.appendChild(el('div.group', null, row('Desktop-Einstellungen zurücksetzen', 'Dock, Hintergrund, Direktlinks und Fenster auf Anfang', el('button.btn.danger', { type: 'button', text: 'Zurücksetzen', onclick: function () {
-        A.confirm({ title: 'Alles zurücksetzen?', text: 'Dock, Hintergrund, Direktlinks und gemerkte Fenster gehen verloren. Apps und Dateien bleiben.', ok: 'Zurücksetzen', danger: true }).then(function (ok) {
+      p.appendChild(el('div.group', null, row('Desktop-Einstellungen zurücksetzen', 'Dock, Leisten, Hintergrund, Direktlinks und Fenster auf Anfang', el('button.btn.danger', { type: 'button', text: 'Zurücksetzen', onclick: function () {
+        A.confirm({ title: 'Alles zurücksetzen?', text: 'Dock, Leisten, Hintergrund, Direktlinks und gemerkte Fenster gehen verloren. Apps und Dateien bleiben.', ok: 'Zurücksetzen', danger: true }).then(function (ok) {
           if (!ok) return;
           var d = HX.prefs.defaults;
           Object.keys(d).forEach(function (k) { HX.prefs.get()[k] = JSON.parse(JSON.stringify(d[k])); });

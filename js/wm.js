@@ -52,11 +52,12 @@
   /* ------------------------------------------------------------------ Geometrie */
   function mobile() { return document.body.classList.contains('mobile'); }
   function px(name) { return parseFloat(getComputedStyle(document.documentElement).getPropertyValue(name)) || 0; }
+  /** Platz für Fenster. --top, --res-l/-r/-b setzt der Desktop (shell.js, layoutChrome):
+   *  Leiste oben, Systemleisten und – je nach Einstellung – das Dock. */
   function area() {
     var W = window.innerWidth, Ht = window.innerHeight;
-    var top = px('--panel-h') + px('--sat'), bottom = Ht - px('--sab'), left = px('--sal'), right = W - px('--sar');
-    if (mobile()) bottom -= px('--nav-h');
-    else left += px('--dock-w') + 16;
+    var top = px('--top'), bottom = Ht - px('--sab') - px('--res-b');
+    var left = px('--sal') + px('--res-l'), right = W - px('--sar') - px('--res-r');
     return { x: left, y: top, w: right - left, h: bottom - top };
   }
   function defaultRect(app) {

@@ -66,6 +66,19 @@
     mode: 'auto',             // auto | desktop | mobile
     dock: ['sys:files', 'sys:appcenter', 'sys:terminal', 'sys:settings'],
     desktopIcons: true,
+    deskHidden: [],           // App-ids, die nicht auf dem Desktop bzw. der Startseite stehen
+    iconSize: 'mittel',       // klein | mittel | gross
+    bars: 'kompakt',          // kompakt | normal – Höhe von Leiste oben, Leiste unten und Titelzeilen
+    panelHide: 'nie',         // nie | vollbild | immer – Leiste oben ausblenden
+    clockPos: 'mitte',        // mitte | rechts
+    clockDate: true,          // Datum neben der Uhr (Desktop-Ansicht)
+    batteryPct: true,
+    dockPos: 'links',         // links | unten | rechts (Desktop-Ansicht)
+    dockMode: 'neben',        // neben | ueber | auto – Fenster neben dem Dock, über dem Dock, Dock ausblenden
+    dockSize: 'mittel',       // klein | mittel | gross
+    mobileDock: false,        // Handy: Favoritenleiste mit offenen Fenstern in der unteren Leiste
+    accent: 'tuerkis',
+    wallDim: 0,               // 0 | 1 | 2 – Hintergrund abdunkeln
     seconds: false,
     restore: true,
     session: [],
@@ -188,14 +201,17 @@
   HX.pushLayer = pushLayer;
 
   /** Kontextmenü. items: [{label, icon, run, danger, disabled} | '-' | {head}] ; at: {x,y} oder Element */
+  var openMenu = null;
   HX.menu = function (items, at, opts) {
     opts = opts || {};
+    if (openMenu) openMenu();   // immer nur ein Menü
     var scrim = el('div.scrim');
     var pop = el('div.pop', { role: 'menu' });
     if (opts.className) pop.className += ' ' + opts.className;
-    var done = false;
-    var close = function () { if (done) return; done = true; drop(); scrim.remove(); pop.remove(); if (opts.onClose) opts.onClose(); };
+    var done = false, born = Date.now(), downOnScrim = false;
+    var close = function () { if (done) return; done = true; if (openMenu === close) openMenu = null; drop(); scrim.remove(); pop.remove(); if (opts.onClose) opts.onClose(); };
     var drop = pushLayer(close);
+    openMenu = close;
     items.forEach(function (it) {
       if (!it) return;
       if (it === '-') { pop.appendChild(el('div.menu-sep')); return; }
@@ -206,13 +222,23 @@
       b.addEventListener('click', function () { close(); if (it.run) setTimeout(it.run, 0); });
       pop.appendChild(b);
     });
-    scrim.addEventListener('pointerdown', function (e) { e.preventDefault(); close(); });
-    scrim.addEventListener('contextmenu', function (e) { e.preventDefault(); close(); });
+    // Geschlossen wird erst durch ein neues Antippen außerhalb: Drücken UND Loslassen auf dem Hintergrund.
+    // Das Loslassen nach langem Drücken oder das contextmenu-Ereignis, das Android nach dem langen
+    // Drücken nachschiebt, landen sonst auf dem Hintergrund und schlössen das Menü sofort wieder.
+    var young = function () { return Date.now() - born < 450; };
+    scrim.addEventListener('pointerdown', function (e) { e.preventDefault(); downOnScrim = !young(); });
+    scrim.addEventListener('pointerup', function () { if (downOnScrim) close(); downOnScrim = false; });
+    scrim.addEventListener('pointercancel', function () { downOnScrim = false; });
+    scrim.addEventListener('contextmenu', function (e) { e.preventDefault(); if (!young()) close(); });
+    scrim.addEventListener('wheel', function () { if (!young()) close(); }, { passive: true });
     document.body.appendChild(scrim);
     document.body.appendChild(pop);
     place(pop, at);
     var first = pop.querySelector('.menu-item:not([disabled])');
     if (first && !opts.noFocus) first.focus({ preventScroll: true });
+    pop.addEventListener('contextmenu', function (e) { e.preventDefault(); });
+    // Ein Klick, der vom öffnenden Drücken übrig ist, löst keinen Menüpunkt aus.
+    pop.addEventListener('click', function (e) { if (Date.now() - born < 300) { e.stopPropagation(); e.preventDefault(); } }, true);
     pop.addEventListener('keydown', function (e) {
       if (e.key === 'Escape') { close(); return; }
       if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;

@@ -1,67 +1,129 @@
 /* Helix-Desktop: Leiste, Dock, Fenster, Starter, Übersicht – Desktop- und Handy-Modus. */
 
 body { overflow: hidden; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
-:root { --panel-h: 34px; --dock-w: 68px; --nav-h: 60px; }
+:root {
+  /* Startwerte; layoutChrome() in shell.js setzt sie passend zu Einstellungen, Ansicht und Android-Rändern. */
+  --panel-h: 28px; --panel-pt: var(--sat); --panel-total: calc(var(--panel-h) + var(--sat)); --top: var(--panel-total);
+  --nav-h: 50px; --bar-h: 32px;
+  --dock-w: 66px; --dock-item: 52px; --dock-icon: 40px;
+  --res-l: 82px; --res-r: 0px; --res-b: 0px; --dres-l: 82px; --dres-r: 0px; --dres-b: 0px;
+  --desk-icon: 48px; --desk-cell: 92px; --home-icon: 54px; --wall-dim: 0;
+}
 
 #wallpaper {
   position: fixed; inset: 0; z-index: 0;
   background: var(--abyss) center / cover no-repeat;
   transition: filter .35s ease, transform .35s ease;
 }
+#wallpaper::after { content: ""; position: absolute; inset: 0; background: #000; opacity: var(--wall-dim); pointer-events: none; }
 body.dim #wallpaper { filter: brightness(.55) saturate(.9); }
 
 /* ------------------------------------------------------------------ Leiste oben */
 #panel {
   position: fixed; left: 0; right: 0; top: 0; z-index: 9000;
-  height: calc(var(--panel-h) + var(--sat)); padding: var(--sat) calc(8px + var(--sar)) 0 calc(8px + var(--sal));
-  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  height: var(--panel-total);
+  padding: var(--panel-pt) calc(6px + var(--sar) + var(--cut-pr, 0px)) 0 calc(6px + var(--sal) + var(--cut-pl, 0px));
+  display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; column-gap: 4px;
   background: var(--glass-strong); backdrop-filter: blur(18px) saturate(1.4); -webkit-backdrop-filter: blur(18px) saturate(1.4);
   border-bottom: 1px solid var(--line);
-  font-family: var(--font-display); font-size: 13px;
+  font-family: var(--font-display); font-size: 12.5px;
+  transition: transform .22s ease;
 }
 #panel button {
-  height: 28px; border: 0; background: transparent; border-radius: 14px; padding: 0 10px; cursor: pointer;
-  display: inline-flex; align-items: center; gap: 8px;
+  height: calc(var(--panel-h) - 4px); border: 0; background: transparent; border-radius: 12px; padding: 0 8px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px;
+}
+body.bars-normal #panel { font-size: 13px; }
+body.bars-normal #panel button { padding: 0 10px; gap: 8px; }
+/* Uhr rechts (Einstellung oder Vollbild mit Kamera in der Mitte): Mitte bleibt frei */
+body.clock-right #panel { grid-template-columns: minmax(0, 1fr) auto auto; }
+body.clock-right #p-clock { grid-column: 2; }
+body.clock-right #p-status { grid-column: 3; }
+#p-left { max-width: var(--cut-lmax, none); }
+/* Ausgeblendet: Griff oben in der Mitte (Touch) bzw. Rand oben (Maus) holt die Leiste über den Inhalt */
+body.panel-hidden #panel { transform: translateY(-100%); box-shadow: none; }
+body.panel-hidden.panel-peek #panel { transform: none; box-shadow: var(--shadow-soft); }
+#p-grip, #p-edge { display: none; }
+body.panel-hidden #p-grip {
+  display: flex; position: fixed; z-index: 8990; top: var(--sat); left: 50%; transform: translateX(-50%);
+  width: 72px; height: 16px; border: 0; padding: 0; background: transparent; cursor: pointer; align-items: flex-start; justify-content: center;
+}
+body.panel-hidden #p-grip span { display: block; width: 38px; height: 4px; margin-top: 4px; border-radius: 2px; background: rgba(255,255,255,.45); box-shadow: 0 0 0 1px rgba(0,0,0,.25); }
+body.panel-hidden.panel-peek #p-grip { display: none; }
+@media (hover: hover) and (pointer: fine) {
+  body.panel-hidden #p-grip { display: none; }
+  body.panel-hidden #p-edge { display: block; position: fixed; z-index: 8990; left: 0; right: 0; top: 0; height: 4px; }
 }
 #panel button:hover, #panel button[aria-expanded="true"] { background: var(--raised); }
 #p-left { display: flex; align-items: center; gap: 4px; min-width: 0; }
-#p-overview .mark { width: 22px; height: 22px; }
+#p-overview .mark { width: 20px; height: 20px; }
+body.bars-normal #p-overview .mark { width: 22px; height: 22px; }
 #p-overview .mark path { transition: d .45s ease; }
 #p-active { color: var(--mist); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 34vw; font-weight: 500; }
 #p-clock { font-weight: 500; font-variant-numeric: tabular-nums; letter-spacing: .01em; }
 #p-status { justify-self: end; }
-#p-status .ic { width: 16px; height: 16px; }
+#p-status .ic { width: 15px; height: 15px; }
 #p-status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--peach); box-shadow: 0 0 8px var(--peach); }
 
-/* ------------------------------------------------------------------ Dock (Desktop: links) */
+/* ------------------------------------------------------------------ Dock (Desktop: links, unten oder rechts) */
 #dock {
   position: fixed; z-index: 8000;
-  left: calc(8px + var(--sal)); top: calc(var(--panel-h) + var(--sat) + 10px); bottom: calc(10px + var(--sab));
+  left: calc(8px + var(--sal)); top: calc(var(--top) + 8px); bottom: calc(8px + var(--sab));
   width: var(--dock-w); padding: 8px 0;
   display: flex; flex-direction: column; align-items: center; gap: 6px;
   background: var(--glass); border: 1px solid var(--line); border-radius: var(--r-l);
   backdrop-filter: blur(18px) saturate(1.3); -webkit-backdrop-filter: blur(18px) saturate(1.3);
   box-shadow: var(--shadow-soft);
+  transition: transform .22s ease, opacity .22s ease;
 }
 #dock .dock-list { display: flex; flex-direction: column; align-items: center; gap: 6px; overflow-y: auto; overflow-x: hidden; scrollbar-width: none; flex: 1; min-height: 0; padding: 0 6px; }
 #dock .dock-list::-webkit-scrollbar { display: none; }
 #dock .sep { width: 32px; height: 1px; background: var(--line-strong); margin: 4px 0; flex: none; }
 .dock-item {
-  position: relative; width: 52px; height: 52px; flex: none; border: 0; padding: 0; border-radius: 16px;
+  position: relative; width: var(--dock-item); height: var(--dock-item); flex: none; border: 0; padding: 0; border-radius: 30%;
   background: transparent; cursor: pointer; display: flex; align-items: center; justify-content: center;
 }
 .dock-item:hover { background: var(--raised); }
-.dock-item .appicon { width: 40px; height: 40px; }
+.dock-item .appicon { width: var(--dock-icon); height: var(--dock-icon); }
 /* Die zwei Stränge: Pfirsich = läuft, Türkis = im Vordergrund */
-.dock-item .run { position: absolute; left: -6px; top: 50%; width: 4px; height: 10px; margin-top: -5px; border-radius: 2px; background: var(--peach); opacity: 0; transition: height .2s, opacity .2s; }
+.dock-item .run { position: absolute; left: -6px; top: 50%; width: 4px; height: 10px; margin-top: -5px; border-radius: 2px; background: var(--peach); opacity: 0; transition: height .2s, width .2s, opacity .2s; }
 .dock-item.running .run { opacity: 1; }
 .dock-item.focused .run { height: 22px; margin-top: -11px; background: var(--teal); }
 #dock .grid-btn { margin-top: auto; }
+/* rechts */
+body.dock-right #dock { left: auto; right: calc(8px + var(--sar)); }
+body.dock-right .dock-item .run { left: auto; right: -6px; }
+/* unten: waagrecht, mittig */
+body.dock-bottom #dock {
+  top: auto; bottom: calc(8px + var(--sab)); left: 50%; transform: translateX(-50%);
+  width: auto; max-width: calc(100vw - 24px - var(--sal) - var(--sar)); height: var(--dock-w);
+  flex-direction: row; padding: 0 8px;
+}
+body.dock-bottom #dock .dock-list { flex-direction: row; overflow-x: auto; overflow-y: hidden; padding: 6px 0; min-width: 0; }
+body.dock-bottom #dock .sep { width: 1px; height: 32px; margin: 0 4px; }
+body.dock-bottom #dock .grid-btn { margin: 0; }
+body.dock-bottom .dock-item .run, body.mdock .dock-item .run { left: 50%; top: auto; bottom: -5px; width: 10px; height: 4px; margin: 0 0 0 -5px; }
+body.dock-bottom .dock-item.focused .run, body.mdock .dock-item.focused .run { width: 22px; height: 4px; margin: 0 0 0 -11px; }
+/* Fenster über dem Dock: das Dock liegt unter den Fenstern und kommt am Rand nach oben */
+body.dock-over #dock { z-index: 50; }
+body.dock-over.dock-peek #dock { z-index: 8000; }
+/* Dock ausblenden: am Rand oder auf leerem Desktop zeigen */
+body.dock-auto.dock-left #dock { transform: translateX(calc(-100% - 14px)); }
+body.dock-auto.dock-right #dock { transform: translateX(calc(100% + 14px)); }
+body.dock-auto.dock-bottom #dock { transform: translate(-50%, calc(100% + 14px)); }
+body.dock-auto.dock-peek #dock, body.dock-auto.desk-free:not(.overview) #dock { transform: none; }
+body.dock-auto.dock-bottom.dock-peek #dock, body.dock-auto.dock-bottom.desk-free:not(.overview) #dock { transform: translateX(-50%); }
+#dock-edge { display: none; }
+body.dock-over:not(.mobile) #dock-edge, body.dock-auto:not(.mobile) #dock-edge { display: block; position: fixed; z-index: 8100; }
+body.dock-left #dock-edge { left: 0; top: var(--top); bottom: 0; width: 6px; }
+body.dock-right #dock-edge { right: 0; top: var(--top); bottom: 0; width: 6px; }
+body.dock-bottom #dock-edge { left: 0; right: 0; bottom: 0; height: 6px; }
+body.dock-peek #dock-edge { display: none !important; }
 
 /* Handy: Dock wird zur Leiste unten */
 body.mobile #dock {
-  left: 0; right: 0; bottom: 0; top: auto; width: auto; height: calc(var(--nav-h) + var(--sab));
-  padding: 0 calc(12px + var(--sar)) var(--sab) calc(12px + var(--sal));
+  left: 0; right: 0; bottom: 0; top: auto; width: auto; height: calc(var(--nav-h) + var(--sab)); transform: none;
+  padding: 0 calc(10px + var(--sar)) var(--sab) calc(10px + var(--sal));
   flex-direction: row; border-radius: 0; border-width: 1px 0 0; justify-content: space-around; gap: 0;
   background: var(--glass-strong); box-shadow: none;
 }
@@ -69,14 +131,32 @@ body.mobile #dock .dock-list, body.mobile #dock .sep { display: none; }
 body.mobile #dock .grid-btn { margin: 0; }
 .nav-btn { display: none; }
 body.mobile .nav-btn {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
-  width: 76px; height: 52px; border: 0; background: transparent; border-radius: 14px; cursor: pointer;
-  font-size: 11px; color: var(--mist);
+  position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  width: 72px; height: calc(var(--nav-h) - 6px); border: 0; background: transparent; border-radius: 14px; cursor: pointer;
+  font-size: 10.5px; color: var(--mist); flex: none;
 }
-body.mobile .nav-btn .ic { width: 22px; height: 22px; color: var(--paper); }
+body.mobile .nav-btn .ic { width: 21px; height: 21px; color: var(--paper); }
+body.mobile.bars-normal .nav-btn { font-size: 11px; width: 76px; }
+body.mobile.bars-normal .nav-btn .ic { width: 22px; height: 22px; }
+/* Favoritenleiste: angeheftete Apps und offene Fenster zwischen Start und Fenster, zurückhaltend */
+body.mobile.mdock #dock { justify-content: flex-start; gap: 2px; }
+body.mobile.mdock .nav-btn { width: 46px; }
+body.mobile.mdock .nav-btn > span:not(.ic):not(.badge) { display: none; }
+body.mobile.mdock #nav-home { order: 0; }
+body.mobile.mdock #dock .dock-list {
+  order: 1; display: flex; flex-direction: row; flex: 1; min-width: 0; height: 100%; align-items: center; gap: 2px;
+  overflow-x: auto; overflow-y: hidden; padding: 0 4px; border-left: 1px solid var(--line); border-right: 1px solid var(--line);
+  mask-image: linear-gradient(90deg, transparent 0, #000 10px, #000 calc(100% - 10px), transparent 100%);
+}
+body.mobile.mdock #nav-windows { order: 2; }
+body.mobile.mdock #nav-apps { order: 3; }
+body.mobile.mdock .dock-item { width: calc(var(--nav-h) - 10px); height: calc(var(--nav-h) - 10px); opacity: .88; }
+body.mobile.mdock .dock-item.running, body.mobile.mdock .dock-item:active { opacity: 1; }
+body.mobile.mdock .dock-item .appicon { width: calc(var(--nav-h) - 22px); height: calc(var(--nav-h) - 22px); }
+body.mobile.mdock .dock-item .run { bottom: -2px; }
 body.mobile .nav-btn[aria-pressed="true"] { color: var(--teal); }
 body.mobile .nav-btn[aria-pressed="true"] .ic { color: var(--teal); }
-body.mobile .nav-btn .badge { position: absolute; transform: translate(14px, -12px); min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--peach); color: #2A1806; font-size: 10px; font-weight: 700; line-height: 16px; }
+body.mobile .nav-btn .badge { position: absolute; top: 3px; left: 50%; transform: translateX(4px); min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--peach); color: #2A1806; font-size: 10px; font-weight: 700; line-height: 16px; }
 body.mobile #dock .grid-btn.dock-item { display: none; }
 
 /* ------------------------------------------------------------------ App-Icons */
@@ -94,20 +174,22 @@ body.mobile #dock .grid-btn.dock-item { display: none; }
 
 /* ------------------------------------------------------------------ Arbeitsfläche */
 #desk {
-  position: fixed; z-index: 1; inset: calc(var(--panel-h) + var(--sat)) var(--sar) var(--sab) calc(var(--dock-w) + 16px + var(--sal));
-  padding: 18px 18px 18px 8px; overflow: hidden;
+  position: fixed; z-index: 1;
+  inset: var(--top) calc(var(--sar) + var(--dres-r)) calc(var(--sab) + var(--dres-b)) calc(var(--sal) + var(--dres-l));
+  padding: 14px; overflow: hidden;
 }
-.desk-icons { display: grid; grid-template-columns: repeat(auto-fill, 92px); grid-auto-rows: 100px; gap: 8px; align-content: start; }
+.desk-icons { display: grid; grid-template-columns: repeat(auto-fill, var(--desk-cell)); grid-auto-rows: calc(var(--desk-cell) + 8px); gap: 6px; align-content: start; }
+.desk-icon .appicon { width: var(--desk-icon); height: var(--desk-icon); }
 .desk-icon {
   border: 0; background: transparent; border-radius: var(--r-m); padding: 8px 4px; cursor: pointer;
   display: flex; flex-direction: column; align-items: center; gap: 6px; color: #fff;
   text-shadow: 0 1px 3px rgba(0,0,0,.7); font-size: 12px; line-height: 1.2; text-align: center;
 }
 .desk-icon:hover, .desk-icon:focus-visible { background: rgba(255,255,255,.12); }
-.desk-icon .label { max-width: 86px; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.desk-icon .label { max-width: calc(var(--desk-cell) - 6px); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 
 /* Handy-Startseite */
-body.mobile #desk { inset: calc(var(--panel-h) + var(--sat)) 0 calc(var(--nav-h) + var(--sab)) 0; padding: 0; overflow-y: auto; }
+body.mobile #desk { inset: var(--top) 0 calc(var(--nav-h) + var(--sab)) 0; padding: 0; overflow-y: auto; }
 .home { padding: 26px calc(18px + var(--sar)) 24px calc(18px + var(--sal)); max-width: 720px; margin: 0 auto; }
 .home-clock { font-family: var(--font-display); font-weight: 300; font-size: 64px; line-height: 1; letter-spacing: -.02em; color: #fff; text-shadow: 0 2px 16px rgba(0,0,0,.35); font-variant-numeric: tabular-nums; }
 .home-date { font-family: var(--font-display); font-size: 15px; color: rgba(255,255,255,.85); margin: 8px 0 26px; text-shadow: 0 1px 6px rgba(0,0,0,.4); }
@@ -129,7 +211,7 @@ body.mobile #desk { inset: calc(var(--panel-h) + var(--sat)) 0 calc(var(--nav-h)
 .chip { border: 1px solid var(--line-strong); background: transparent; border-radius: 999px; padding: 5px 12px; font-size: 12px; cursor: pointer; }
 .chip:hover { background: var(--raised); }
 .home-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 10px 4px; }
-.home-grid .desk-icon .appicon { width: 54px; height: 54px; }
+.home-grid .desk-icon .appicon { width: var(--home-icon); height: var(--home-icon); }
 
 /* ------------------------------------------------------------------ Fenster */
 #windows { position: fixed; inset: 0; z-index: 100; pointer-events: none; }
@@ -144,14 +226,14 @@ body.mobile #desk { inset: calc(var(--panel-h) + var(--sat)) 0 calc(var(--nav-h)
 .win.max { border-radius: 0; border-width: 0; box-shadow: none; }
 .win.anim { transition: left .2s ease, top .2s ease, width .2s ease, height .2s ease, transform .3s ease, opacity .2s ease; }
 .win-bar {
-  height: 40px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 4px 0 10px;
+  height: var(--bar-h); flex: none; display: flex; align-items: center; gap: 8px; padding: 0 4px 0 10px;
   background: var(--bar, var(--deep)); color: var(--bar-ink, var(--paper)); cursor: default; touch-action: none;
   border-bottom: 1px solid var(--line);
 }
-.win-bar .appicon { width: 22px; height: 22px; border-radius: 7px; box-shadow: none; }
+.win-bar .appicon { width: 20px; height: 20px; border-radius: 6px; box-shadow: none; }
 .win-title { flex: 1; min-width: 0; font-family: var(--font-display); font-weight: 500; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.win-bar .icon-btn { width: 34px; height: 34px; color: inherit; }
-.win-bar .icon-btn .ic { width: 17px; height: 17px; }
+.win-bar .icon-btn { width: calc(var(--bar-h) - 4px); height: calc(var(--bar-h) - 4px); color: inherit; }
+.win-bar .icon-btn .ic { width: 16px; height: 16px; }
 .win-bar .close:hover { background: var(--danger); color: #fff; }
 .win-body { position: relative; flex: 1; min-height: 0; background: #fff; }
 .win-body iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: block; background: #fff; }
@@ -174,13 +256,12 @@ body.dragging { cursor: grabbing; }
   background: color-mix(in srgb, var(--teal) 18%, transparent); border: 2px solid var(--teal); transition: all .15s ease;
 }
 body.mobile .win { border-radius: 0; border-width: 0; box-shadow: none; }
-body.mobile .win-bar { height: 44px; }
 body.mobile .win-bar .b-max { display: none; }
 
 /* ------------------------------------------------------------------ Übersicht */
 #overview { position: fixed; inset: 0; z-index: 7000; }
 #overview .ov-top {
-  position: absolute; left: 0; right: 0; top: calc(var(--panel-h) + var(--sat) + 14px); z-index: 2;
+  position: absolute; left: 0; right: 0; top: calc(var(--top) + 14px); z-index: 2;
   display: flex; justify-content: center; padding: 0 16px;
 }
 #overview .ov-search { width: min(420px, 100%); }
@@ -206,7 +287,7 @@ body.overview .win:hover { border-color: var(--teal); }
 /* ------------------------------------------------------------------ Starter (alle Apps) */
 #launcher {
   position: fixed; inset: 0; z-index: 7500; overflow-y: auto;
-  padding: calc(var(--panel-h) + var(--sat) + 18px) calc(16px + var(--sar)) calc(24px + var(--sab)) calc(var(--dock-w) + 28px + var(--sal));
+  padding: calc(var(--top) + 18px) calc(16px + var(--sar) + var(--dres-r)) calc(24px + var(--sab) + var(--dres-b)) calc(16px + var(--sal) + var(--dres-l));
   background: rgba(6, 9, 22, .55); backdrop-filter: blur(22px) saturate(1.2); -webkit-backdrop-filter: blur(22px) saturate(1.2);
 }
 :root[data-theme="light"] #launcher { background: rgba(231, 235, 242, .6); }
@@ -263,7 +344,7 @@ body.mobile #launcher { padding-left: calc(16px + var(--sal)); padding-bottom: c
 .dialog .actions { display: flex; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 
 /* Benachrichtigungen */
-#toasts { position: fixed; z-index: 9900; right: calc(12px + var(--sar)); top: calc(var(--panel-h) + var(--sat) + 10px); display: flex; flex-direction: column; gap: 8px; width: min(360px, calc(100vw - 24px)); pointer-events: none; }
+#toasts { position: fixed; z-index: 9900; right: calc(12px + var(--sar)); top: calc(var(--top) + 10px); display: flex; flex-direction: column; gap: 8px; width: min(360px, calc(100vw - 24px)); pointer-events: none; }
 body.mobile #toasts { left: 12px; right: 12px; width: auto; }
 .toast {
   pointer-events: auto; display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: start;
@@ -312,7 +393,7 @@ body.mobile #overview { background: rgba(4, 6, 16, .55); }
 body.mobile .win-bar { display: none; }
 #p-win { display: inline-flex; align-items: center; gap: 0; margin-left: 2px; }
 #p-win[hidden] { display: none; }
-#panel #p-win button { width: 30px; padding: 0; justify-content: center; }
+#panel #p-win button { width: calc(var(--panel-h) + 2px); padding: 0; justify-content: center; }
 #p-win .ic { width: 17px; height: 17px; }
 body.mobile #p-active { max-width: 34vw; font-weight: 500; color: var(--paper); }
 body.mobile #p-status > span:not(.ic):not(.dot) { display: none; }
