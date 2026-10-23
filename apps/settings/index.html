@@ -158,6 +158,8 @@
         row('Größe', 'Höhe der Leiste oben, der Leiste unten und der Fenster-Titelzeilen', seg('bars', [['kompakt', 'Kompakt'], ['normal', 'Normal']])),
         row('Leiste oben ausblenden', 'Ausgeblendet holst du sie mit dem Griff oben in der Mitte zurück, mit der Maus am oberen Rand. Im Vollbild rückt sie sonst in den Streifen neben der Kamera.',
           seg('panelHide', [['nie', 'Nie'], ['vollbild', 'Im Vollbild'], ['immer', 'Immer']])),
+        row('Uhr und Status oben', 'Automatisch: nur wenn Android keine eigene Statusleiste zeigt, etwa im Vollbild. Sonst bleibt oben ein Knopf für Kalender und Benachrichtigungen.',
+          seg('panelClock', [['auto', 'Automatisch'], ['immer', 'Immer'], ['nie', 'Nie']])),
         row('Uhr', null, seg('clockPos', [['mitte', 'Mitte'], ['rechts', 'Rechts']])),
         row('Datum neben der Uhr', 'In der Desktop-Ansicht', tog('clockDate', true)),
         row('Sekunden in der Uhr', null, tog('seconds', false)),
@@ -186,7 +188,8 @@
 
       p.appendChild(el('span.label', { text: 'Handy-Ansicht' }));
       p.appendChild(el('div.group', null,
-        row('Favoritenleiste', 'Angeheftete Apps und offene Fenster in der Leiste unten, zwischen Start und Fenster', tog('mobileDock', false))));
+        row('Favoritenleiste', 'Angeheftete Apps und offene Fenster in der Leiste unten, zwischen Start und Fenster', tog('mobileDock', false)),
+        row('Große Uhr auf der Startseite', null, tog('homeClock', true))));
 
       p.appendChild(el('span.label', { text: 'Arbeitsfläche und Startseite' }));
       var hidden = (pref('deskHidden') || []).map(function (id) { return HX.apps.get(id); }).filter(Boolean);

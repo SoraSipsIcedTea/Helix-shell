@@ -419,3 +419,6 @@ body.mobile.tint-bot .nav-btn .ic { color: color-mix(in srgb, var(--tint-bot-ink
 body.mobile.tint-bot .nav-btn[aria-pressed="true"], body.mobile.tint-bot .nav-btn[aria-pressed="true"] .ic { color: var(--tint-bot-ink); }
 body.mobile.tint-bot.mdock #dock .dock-list { border-color: color-mix(in srgb, var(--tint-bot-ink) 14%, transparent); }
 body.mobile.tint-bot .dock-item:hover { background: color-mix(in srgb, var(--tint-bot-ink) 10%, transparent); }
+
+/* Startseite ohne große Uhr: Datum als Überschrift */
+.home > .home-date:first-child { font-size: 18px; margin-top: 4px; }

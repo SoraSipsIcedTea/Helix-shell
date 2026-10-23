@@ -56,6 +56,8 @@
       if (k === 'pins' || k === 'desktopIcons' || k === 'deskHidden') renderDesk();
       if (k === 'seconds' || k === 'clockDate') tick();
       if (k === 'batteryPct') renderStatus();
+      if (k === 'panelClock') { tick(); renderStatus(); }
+      if (k === 'homeClock') renderDesk();
       if (CHROME_KEYS.indexOf(k) >= 0) layoutChrome();
     });
   }
@@ -258,6 +260,8 @@
     };
     Object.keys(cls).forEach(function (k) { b.classList.toggle(k, cls[k]); });
     if (!hide) b.classList.remove('panel-peek');
+    var clockKey = panelClock() + '|' + mob;
+    if (clockKey !== layoutChrome.clock) { layoutChrome.clock = clockKey; tick(); renderStatus(); }
     deskFree();
     WM.layoutAll();
     if (state.overview) layoutOverview();
@@ -414,11 +418,23 @@
     c.appendChild(more);
     c.appendChild(el('button', { type: 'button', 'aria-label': 'Fenster schließen', title: 'Schließen', onclick: function () { WM.close(w); } }, icon('x')));
   }
+  /** Zeigt Android gerade seine Statusleiste (mit Uhr, WLAN, Akku) über Helix? */
+  function androidBar() { return !!(H && ins.top > 0 && !fullscreen()); }
+  /** Uhr und Status in der Leiste oben – nicht doppelt zur Android-Statusleiste (Einstellung panelClock). */
+  function panelClock() {
+    var m = HX.prefs.get('panelClock') || 'auto';
+    return m === 'immer' || (m === 'auto' && !androidBar());
+  }
   var lastMin = -1;
   function tick() {
     var d = new Date(), sec = HX.prefs.get('seconds');
     var date = !state.mobile && HX.prefs.get('clockDate') !== false;
-    $('p-clock').textContent = (date ? d.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' }) + '  ' : '') + HX.fmt.time(d, sec);
+    var dateText = d.toLocaleDateString('de-DE', { weekday: 'short', day: 'numeric', month: 'short' });
+    var pc = $('p-clock');
+    if (panelClock()) pc.textContent = (date ? dateText + '  ' : '') + HX.fmt.time(d, sec);
+    else if (!state.mobile) pc.textContent = dateText;   // Uhrzeit steht schon oben in der Android-Leiste
+    else { HX.clear(pc).appendChild(icon('bell')); }     // bleibt der Zugang zu Kalender und Benachrichtigungen
+    pc.title = 'Kalender und Benachrichtigungen';
     if (d.getMinutes() !== lastMin) {
       lastMin = d.getMinutes();
       var hc = document.querySelector('.home-clock'), hd = document.querySelector('.home-date');
@@ -439,6 +455,7 @@
   function renderStatus() {
     var s = HX.clear($('p-status'));
     if (H && H.dev) s.appendChild(el('span.dot', { title: 'Entwicklungsmodus' }));
+    if (!panelClock()) { s.appendChild(icon('sliders-horizontal')); s.setAttribute('aria-label', 'Schnelleinstellungen'); return; }   // WLAN und Akku zeigt Android
     s.appendChild(icon(navigator.onLine ? 'wifi' : 'wifi-off'));
     var b = state.battery;
     if (b) {
@@ -641,7 +658,7 @@
   function homeView() {
     var d = new Date();
     var v = el('div.home', null,
-      el('div.home-clock', { text: HX.fmt.time(d) }),
+      HX.prefs.get('homeClock') !== false ? el('div.home-clock', { text: HX.fmt.time(d) }) : null,
       el('div.home-date', { text: HX.fmt.day(d) }));
     var pins = HX.prefs.get('pins') || [];
     var groups = groupApps(Apps.installed().filter(shown));

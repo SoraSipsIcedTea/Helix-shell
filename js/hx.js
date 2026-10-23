@@ -78,6 +78,8 @@
     panelHide: 'nie',         // nie | vollbild | immer – Leiste oben ausblenden
     clockPos: 'mitte',        // mitte | rechts
     clockDate: true,          // Datum neben der Uhr (Desktop-Ansicht)
+    panelClock: 'auto',       // auto | immer | nie – Uhr und Status oben; auto: nur ohne sichtbare Android-Statusleiste
+    homeClock: true,          // große Uhr auf der Startseite (Handy-Ansicht)
     batteryPct: true,
     dockPos: 'links',         // links | unten | rechts (Desktop-Ansicht)
     dockMode: 'neben',        // neben | ueber | auto – Fenster neben dem Dock, über dem Dock, Dock ausblenden
