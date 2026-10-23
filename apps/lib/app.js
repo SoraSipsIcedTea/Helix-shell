@@ -7,7 +7,11 @@
   var A = window.A = { HX: HX, Helix: window.Helix || null };
 
   // Erscheinungsbild vom Desktop übernehmen (bevor etwas gezeichnet wird)
-  try { document.documentElement.setAttribute('data-theme', HX ? HX.theme() : 'dark'); } catch (e) { }
+  try {
+    document.documentElement.setAttribute('data-theme', HX ? HX.theme() : 'dark');
+    var v = HX && HX.variant ? HX.variant() : '';
+    if (v) document.documentElement.setAttribute('data-variant', v);
+  } catch (e) { }
 
   A.params = new URLSearchParams(location.search);
 

@@ -103,7 +103,7 @@
       print('lade …', 'm');
       return A.api('/api/packages/fetch', { method: 'POST', json: { url: x[0] } }).then(function (r) { print(r.label + ' ' + (r.version || '') + ', ' + r.files + ' Dateien', 'p'); A.open('sys:appcenter', { package: r.id }); });
     } },
-    stil: { a: 'dunkel|hell|auto', d: 'Erscheinungsbild', run: function (x) { var m = { dunkel: 'dark', hell: 'light', auto: 'auto' }[x[0]]; if (!m) return print('dunkel, hell oder auto', 'w'); HX.prefs.set('theme', m); } },
+    stil: { a: 'dunkel|amoled|mono|hell|auto', d: 'Erscheinungsbild', run: function (x) { var m = { dunkel: 'dark', amoled: 'amoled', mono: 'mono', hell: 'light', auto: 'auto' }[x[0]]; if (!m) return print('dunkel, amoled, mono, hell oder auto', 'w'); HX.prefs.set('theme', m); } },
     datum: { d: 'Datum und Uhrzeit', run: function () { print(new Date().toLocaleString('de-DE', { dateStyle: 'full', timeStyle: 'medium' })); } },
     echo: { a: '<text>', d: 'Text ausgeben', run: function (x) { print(x.join(' ')); } },
     leeren: { d: 'Bildschirm leeren', run: function () { A.clear(out); } },

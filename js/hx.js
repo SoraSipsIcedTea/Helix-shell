@@ -4,6 +4,10 @@
   'use strict';
 
   var HX = window.HX = {};
+  try {
+    var lp = JSON.parse(localStorage.getItem('hx.prefs') || 'null');
+    if (lp && (lp.theme === 'amoled' || lp.theme === 'mono')) document.documentElement.setAttribute('data-variant', lp.theme);
+  } catch (e) { }
   var H = window.Helix;   // vom Helix-Server eingefügt (boot.js), im Desktop mit System-Rechten
   HX.native = H || null;
 
@@ -61,7 +65,8 @@
 
   /* ------------------------------------------------------------------ Einstellungen (überleben Desktop-Updates) */
   var DEFAULTS = {
-    theme: 'dark',            // dark | light | auto
+    theme: 'dark',            // dark | light | auto | amoled (echtes Schwarz) | mono (Schwarz, Graustufen)
+    lastDark: 'dark',         // welche dunkle Darstellung der Schalter „Dunkel“ zurückholt
     wallpaper: 'nacht',
     mode: 'auto',             // auto | desktop | mobile
     scale: 100,               // Darstellung in Prozent: kleiner = mehr Platz, wie ein größerer Bildschirm

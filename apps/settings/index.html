@@ -94,9 +94,14 @@
         acc.appendChild(b);
       });
       p.appendChild(el('div.group', null,
-        row('Erscheinungsbild', 'Automatisch folgt der Einstellung von Android',
-          A.seg([['dark', 'Dunkel'], ['light', 'Hell'], ['auto', 'Automatisch']], pref('theme'), function (v) { setPref('theme', v); })),
-        el('div.row.stack', null, el('div.t', null, el('b', { text: 'Akzentfarbe' }), el('small', { text: 'Fokus, Schalter und Auswahl im Desktop und in den Helix-Apps' })), acc),
+        row('Erscheinungsbild', 'AMOLED: echtes Schwarz, spart Strom auf OLED-Bildschirmen. Monochrom: dazu alles in Graustufen. Beide gelten auch in deinen Apps. Automatisch folgt der Einstellung von Android.',
+          A.seg([['dark', 'Dunkel'], ['amoled', 'AMOLED'], ['mono', 'Monochrom'], ['light', 'Hell'], ['auto', 'Automatisch']], pref('theme'), function (v) {
+            if (v === 'dark' || v === 'amoled' || v === 'mono') setPref('lastDark', v);
+            setPref('theme', v);
+            setTimeout(function () { go('look'); }, 50);   // Akzentfarben passend neu zeichnen
+          })),
+        HX.variant() === 'mono' ? row('Akzentfarbe', 'Im Monochrom-Stil immer Weiß') :
+          el('div.row.stack', null, el('div.t', null, el('b', { text: 'Akzentfarbe' }), el('small', { text: 'Fokus, Schalter und Auswahl im Desktop und in den Helix-Apps' })), acc),
         row('Hintergrund abdunkeln', 'Macht Symbole und Schrift auf hellen Bildern lesbarer',
           A.seg([[0, 'Aus'], [1, 'Leicht'], [2, 'Stark']], pref('wallDim') | 0, function (v) { setPref('wallDim', v); }))));
       p.appendChild(el('span.label', { text: 'Hintergrund' }));
@@ -112,7 +117,7 @@
         return b;
       };
       HX.wallpapers.forEach(function (w) { mk(w.id, w.name, 'url("../../wallpapers/' + w.id + '-klein.jpg")'); });
-      ['#0B1020', '#123B38', '#3A2A1E'].forEach(function (c, i) { var b = mk(c, ['Tinte', 'Tiefsee', 'Erde'][i]); b.style.background = c; });
+      ['#000000', '#0B1020', '#123B38', '#3A2A1E'].forEach(function (c, i) { var b = mk(c, ['Schwarz', 'Tinte', 'Tiefsee', 'Erde'][i]); b.style.background = c; });
       var own = pref('wallpaper');
       if (own && /^data:/.test(own)) mk(own, 'Eigenes Bild', 'url("' + own + '")');
       var up = el('button.wall.up', { type: 'button', 'aria-label': 'Eigenes Bild wählen' }, icon('upload'), el('span', { text: 'Eigenes Bild' }));

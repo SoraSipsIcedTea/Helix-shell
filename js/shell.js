@@ -68,6 +68,12 @@
     if (t === 'auto') return dark && !dark.matches ? 'light' : 'dark';
     return t === 'light' ? 'light' : 'dark';
   }
+  /** amoled | mono | '' – Unterart der dunklen Darstellung */
+  function variantNow() {
+    var t = HX.prefs.get('theme');
+    return t === 'amoled' || t === 'mono' ? t : '';
+  }
+  function themeArgs() { return { theme: themeNow(), variant: variantNow(), accent: accentNow()[0] }; }
   /* Akzentfarbe (Strang 1). Je Farbe eine Variante für Dunkel und Hell, damit Text darauf lesbar bleibt. */
   var ACCENTS = HX.accents = [
     { id: 'tuerkis', name: 'Türkis', dark: ['#2DD4BF', '#062A26'], light: ['#0F9C8C', '#FFFFFF'] },
@@ -78,6 +84,7 @@
     { id: 'gold', name: 'Gold', dark: ['#F2C95C', '#3A2A05'], light: ['#A87A0E', '#FFFFFF'] }
   ];
   function accentNow() {
+    if (variantNow() === 'mono') return ['#FFFFFF', '#000000'];
     var a = ACCENTS.filter(function (x) { return x.id === HX.prefs.get('accent'); })[0] || ACCENTS[0];
     return themeNow() === 'light' ? a.light : a.dark;
   }
@@ -87,23 +94,30 @@
     root.style.setProperty('--teal-ink', v[1]);
   }
   function applyTheme() {
-    var t = themeNow();
+    var t = themeNow(), v = variantNow();
     document.documentElement.setAttribute('data-theme', t);
+    if (v) document.documentElement.setAttribute('data-variant', v); else document.documentElement.removeAttribute('data-variant');
     paintAccent(document.documentElement);
     var meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', t === 'light' ? '#F6F8FB' : '#0B1020');
+    if (meta) meta.setAttribute('content', t === 'light' ? '#F6F8FB' : v ? '#000000' : '#0B1020');
     WM.wins.forEach(function (w) {
       if (w.app.system) applyThemeTo(w.frame.contentWindow);
-      else WM.post(w, 'theme', { theme: t, accent: accentNow()[0] }, 100);
+      else WM.post(w, 'theme', themeArgs(), 100);
     });
     applyTint();
     HX.emit('theme', t);
   }
   function applyThemeTo(cw) {
-    try { cw.document.documentElement.setAttribute('data-theme', themeNow()); paintAccent(cw.document.documentElement); } catch (e) { }
+    try {
+      var r = cw.document.documentElement, v = variantNow();
+      r.setAttribute('data-theme', themeNow());
+      if (v) r.setAttribute('data-variant', v); else r.removeAttribute('data-variant');
+      paintAccent(r);
+    } catch (e) { }
   }
   HX.on('theme-apply', applyThemeTo);
   HX.theme = themeNow;
+  HX.variant = variantNow;
 
   var WALLS = HX.wallpapers = [
     { id: 'nacht', name: 'Nacht' }, { id: 'gezeiten', name: 'Gezeiten' }, { id: 'glut', name: 'Glut' }, { id: 'papier', name: 'Papier' }
@@ -846,11 +860,14 @@
       return b;
     };
     var t = themeNow();
-    tile(t === 'light' ? 'sun' : 'moon', 'Dunkel', t === 'light' ? 'Aus' : 'An', t !== 'light', function (b) {
-      var nt = themeNow() === 'light' ? 'dark' : 'light';
-      HX.prefs.set('theme', nt);
+    var darkName = function () { var v = variantNow(); return v === 'amoled' ? 'AMOLED' : v === 'mono' ? 'Monochrom' : 'An'; };
+    tile(t === 'light' ? 'sun' : 'moon', 'Dunkel', t === 'light' ? 'Aus' : darkName(), t !== 'light', function (b) {
+      var cur = HX.prefs.get('theme');
+      if (themeNow() === 'light') HX.prefs.set('theme', HX.prefs.get('lastDark') || 'dark');
+      else { if (cur !== 'auto') HX.prefs.set('lastDark', cur); HX.prefs.set('theme', 'light'); }
+      var nt = themeNow();
       b.setAttribute('aria-pressed', String(nt === 'dark'));
-      b.querySelector('small').textContent = nt === 'dark' ? 'An' : 'Aus';
+      b.querySelector('small').textContent = nt === 'dark' ? darkName() : 'Aus';
       HX.clear(b.firstChild).appendChild(icon(nt === 'light' ? 'sun' : 'moon').firstChild);
     });
     tile(state.mobile ? 'smartphone' : 'monitor', 'Ansicht', state.mobile ? 'Handy' : 'Desktop', false, function () {
@@ -1053,7 +1070,7 @@
         if (w === WM.focused()) applyTint();
         if (!w.ready) {
           w.ready = true;
-          WM.post(w, 'theme', { theme: themeNow(), accent: accentNow()[0] }, 100);   // Apps können Hell/Dunkel übernehmen
+          WM.post(w, 'theme', themeArgs(), 100);   // Apps übernehmen Hell/Dunkel bzw. AMOLED (boot.js)
           HX.emit('ready', w);
         }
         break;
