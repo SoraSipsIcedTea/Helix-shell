@@ -6,7 +6,7 @@
   var ALLOW = 'fullscreen; clipboard-read; clipboard-write; geolocation; camera; microphone; autoplay; ' +
     'screen-wake-lock; display-capture; encrypted-media; picture-in-picture';
   var wins = [];
-  var zTop = 10, seq = 0, focusedWin = null;
+  var zTop = 10, seq = 0, focusedWin = null, lastArea = null;
   var host;
 
   var WM = HX.wm = {
@@ -38,7 +38,20 @@
     setState: setState,
     reload: reload,
     menu: winMenu,
-    layoutAll: function () { wins.forEach(apply); },
+    layoutAll: function () {
+      // Ändert sich die Fläche (Drehen, Skalierung, Dock), kommen freie Fenster ganz in den sichtbaren Bereich.
+      var a = area(), key = [a.x, a.y, a.w, a.h].map(Math.round).join(',');
+      var fit = lastArea && key !== lastArea && !mobile();
+      lastArea = key;
+      wins.forEach(function (w) {
+        if (fit && !w.max && !w.snap) {
+          var r = w.rect;
+          r.w = Math.max(260, Math.min(r.w, a.w)); r.h = Math.max(160, Math.min(r.h, a.h));
+          r.x = Math.max(a.x, Math.min(r.x, a.x + a.w - r.w)); r.y = Math.max(a.y, Math.min(r.y, a.y + a.h - r.h));
+        }
+        apply(w);
+      });
+    },
     minimizeAll: function () { wins.forEach(function (w) { if (!w.min) minimize(w, true); }); focusedWin = null; changed(); },
     session: function () {
       return wins.map(function (w) {

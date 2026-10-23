@@ -134,6 +134,18 @@
 
       p.appendChild(el('div.group', null,
         row('Ansicht', 'Handy: Fenster füllen den Bildschirm, unten eine Leiste. Automatisch wechselt ab 900 Pixel Breite.', seg('mode', [['auto', 'Automatisch'], ['desktop', 'Desktop'], ['mobile', 'Handy']])),
+        (function () {
+          var cur = parseInt(pref('scale'), 10) || 100;
+          var sub = el('small');
+          var say = function (f) {
+            var v = HX.shell.virtualSize(f);
+            sub.textContent = f === 100 ? 'Alles in normaler Größe. Kleiner: Schaltflächen, Schrift und Fenster schrumpfen, es passt mehr nebeneinander – wie auf einem großen Bildschirm.'
+              : 'Der Desktop ist jetzt ' + v.w + ' × ' + v.h + ' Punkte groß. Zusammen mit der Desktop-Ansicht wirkt das Handy wie ein großer Bildschirm.';
+          };
+          say(cur);
+          return el('div.row', null, el('div.t', null, el('b', { text: 'Skalierung' }), sub),
+            A.seg([[100, '100 %'], [85, '85 %'], [70, '70 %'], [60, '60 %'], [50, '50 %']], cur, function (v) { setPref('scale', v); say(v); }));
+        })(),
         row('Fenster wiederherstellen', 'Nach dem Neustart öffnen sich die Fenster der letzten Sitzung', tog('restore', true))));
 
       p.appendChild(el('span.label', { text: 'Leisten' }));

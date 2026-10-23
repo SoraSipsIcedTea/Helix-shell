@@ -19,6 +19,7 @@
     HX.prefs.load().then(function () {
       applyTheme();
       applyWallpaper();
+      applyScale();
       applyMode();
       layoutChrome();
       return Apps.refresh();
@@ -50,6 +51,7 @@
       if (k === 'theme' || k === 'accent') applyTheme();
       if (k === 'wallpaper' || k === 'wallDim') applyWallpaper();
       if (k === 'mode') applyMode();
+      if (k === 'scale') applyScale();
       if (k === 'dock') renderDock();
       if (k === 'pins' || k === 'desktopIcons' || k === 'deskHidden') renderDesk();
       if (k === 'seconds' || k === 'clockDate') tick();
@@ -144,6 +146,59 @@
   };
   var CHROME_KEYS = ['bars', 'panelHide', 'clockPos', 'dockPos', 'dockMode', 'dockSize', 'mobileDock', 'iconSize'];
   var ins = { top: 0, bottom: 0, left: 0, right: 0, fs: null, cut: null };
+  var rawIns = null;   // Ränder, wie Android sie meldet (dp); ins = umgerechnet auf die skalierte Fläche
+
+  /* ================================================================== Skalierung
+   * Der Desktop wird auf einer größeren Fläche aufgebaut und auf den Bildschirm verkleinert, z. B. bei 50 %
+   * auf einem 412 dp breiten Handy als 824 Punkte breiter Desktop. Alles wird kleiner, es passt mehr nebeneinander,
+   * auch die Apps in den Fenstern sehen die größere Fläche. Umgesetzt über den Viewport (die WebView rechnet
+   * Berührungen selbst um). */
+  state.scale = 1;
+  function baseSize() {
+    if (rawIns && rawIns.vw > 0) return { w: rawIns.vw, h: rawIns.vh };
+    var s = window.screen || {}, land = /landscape/.test((s.orientation && s.orientation.type) || '');
+    var a = Math.min(s.width || 0, s.height || 0), b = Math.max(s.width || 0, s.height || 0);
+    return { w: land ? b : a, h: land ? a : b };
+  }
+  var VIEWPORT_ONE = 'width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content';
+  function applyScale() {
+    var f = Math.min(100, Math.max(40, parseInt(HX.prefs.get('scale'), 10) || 100)) / 100;
+    var meta = document.querySelector('meta[name="viewport"]');
+    var base = baseSize(), content = VIEWPORT_ONE;
+    if (f < 1 && base.w > 0) {
+      content = 'width=' + Math.round(base.w / f) + ', initial-scale=' + f + ', minimum-scale=' + f + ', maximum-scale=' + f +
+        ', user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content';
+    } else f = 1;
+    var changed = meta && meta.getAttribute('content') !== content;
+    if (changed) meta.setAttribute('content', content);
+    if (state.scale !== f) { state.scale = f; applyInsets(); }
+    if (changed && f < 1) setTimeout(checkScale, 600);
+  }
+  /** Hat die WebView die Verkleinerung übernommen? Sonst zurück auf 100 %, statt einen abgeschnittenen Desktop zu zeigen. */
+  function checkScale() {
+    var vv = window.visualViewport, want = Math.round(baseSize().w / state.scale);
+    var seen = vv ? vv.width : document.documentElement.clientWidth;
+    if (state.scale < 1 && seen < want * 0.85) {
+      document.querySelector('meta[name="viewport"]').setAttribute('content', VIEWPORT_ONE);
+      state.scale = 1; applyInsets();
+      HX.notify({ title: 'Skalierung nicht möglich', body: 'Diese Android-Version lässt den Desktop nicht verkleinern. Er bleibt bei 100 %.', log: false });
+    }
+  }
+  shell.scale = function () { return state.scale; };
+  /** Größe des Desktops bei f Prozent (für die Einstellungen). */
+  shell.virtualSize = function (f) { var b = baseSize(); return { w: Math.round(b.w * 100 / f), h: Math.round(b.h * 100 / f) }; };
+  function applyInsets() {
+    var i = rawIns || { top: 0, bottom: 0, left: 0, right: 0 }, f = state.scale || 1;
+    var c = i.cut && i.cut.r > i.cut.l ? { l: i.cut.l / f, r: i.cut.r / f } : null;
+    ins = { top: Math.round((i.top || 0) / f), bottom: Math.round((i.bottom || 0) / f), left: Math.round((i.left || 0) / f), right: Math.round((i.right || 0) / f),
+      fs: typeof i.fs === 'boolean' ? i.fs : null, cut: c };
+    var r = document.documentElement.style;
+    r.setProperty('--sat', ins.top + 'px');
+    r.setProperty('--sab', ins.bottom + 'px');
+    r.setProperty('--sal', ins.left + 'px');
+    r.setProperty('--sar', ins.right + 'px');
+    layoutChrome();
+  }
   /** Vollbild: Android meldet es mit (Statusleiste weg); ältere Helix-Versionen nur über die Fullscreen-API. */
   function fullscreen() { return ins.fs != null ? !!ins.fs : !!document.fullscreenElement; }
   function layoutChrome() {
@@ -325,6 +380,8 @@
       items.push('-');
       items.push({ label: 'Favoritenleiste unten' + (P.mobileDock ? '  ✓' : ''), icon: 'star', run: function () { HX.prefs.set('mobileDock', !P.mobileDock); } });
     }
+    items.push('-'); items.push({ head: 'Skalierung' });
+    [100, 70, 50].forEach(function (f) { pick('scale', f, f + ' %', f === 100 ? 'smartphone' : 'monitor'); });
     items.push('-');
     items.push({ label: 'Desktop anpassen …', icon: 'sliders-horizontal', run: function () { shell.openApp('sys:settings', { page: 'desktop' }); } });
     HX.menu(items, at);
@@ -971,14 +1028,10 @@
     /** Ränder von Android in CSS-Pixeln. fs: Statusleiste ausgeblendet (Vollbild). cut: {l, r} – waagrechte
      *  Lage der Kamera-Aussparung am oberen Rand, falls es eine gibt. */
     insets: function (i) {
-      var r = document.documentElement.style;
-      ins = { top: i.top || 0, bottom: i.bottom || 0, left: i.left || 0, right: i.right || 0,
-        fs: typeof i.fs === 'boolean' ? i.fs : null, cut: i.cut && i.cut.r > i.cut.l ? i.cut : null };
-      r.setProperty('--sat', ins.top + 'px');
-      r.setProperty('--sab', ins.bottom + 'px');
-      r.setProperty('--sal', ins.left + 'px');
-      r.setProperty('--sar', ins.right + 'px');
-      layoutChrome();
+      var before = rawIns ? rawIns.vw + 'x' + rawIns.vh : '';
+      rawIns = i || {};
+      if ((rawIns.vw || 0) + 'x' + (rawIns.vh || 0) !== before && state.scale < 1) applyScale();   // gedreht: Fläche neu
+      applyInsets();
     },
     openUrl: openUrl
   };

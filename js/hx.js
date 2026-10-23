@@ -64,6 +64,7 @@
     theme: 'dark',            // dark | light | auto
     wallpaper: 'nacht',
     mode: 'auto',             // auto | desktop | mobile
+    scale: 100,               // Darstellung in Prozent: kleiner = mehr Platz, wie ein größerer Bildschirm
     dock: ['sys:files', 'sys:appcenter', 'sys:terminal', 'sys:settings'],
     desktopIcons: true,
     deskHidden: [],           // App-ids, die nicht auf dem Desktop bzw. der Startseite stehen
