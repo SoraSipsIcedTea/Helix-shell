@@ -40,8 +40,10 @@
     window.addEventListener('message', onMessage);
     window.addEventListener('keydown', onKey);
     HX.on('apps', function () { renderDock(); renderDesk(); if (state.launcher) renderLauncher(); });
-    HX.on('windows', function () { renderActive(); renderDock(); if (state.overview) layoutOverview(); renderNavBadge(); deskFree(); });
-    HX.on('focus', function (w) { renderActive(w); renderDock(); });
+    HX.on('windows', function () { renderActive(); renderDock(); if (state.overview) layoutOverview(); renderNavBadge(); deskFree(); applyTint(); });
+    HX.on('focus', function (w) { renderActive(w); renderDock(); applyTint(); });
+    // System-Apps melden keine Farbe, der Desktop liest sie selbst ab (gleicher Origin)
+    setInterval(function () { var w = WM.focused(); if (w && w.app.system && !w.min) applyTint(); }, 1500);
     HX.on('title', function (w) { if (w === WM.focused()) renderActive(w); });
     HX.on('session', saveSession);
     HX.on('prefs', function (k) {
@@ -92,7 +94,7 @@
       if (w.app.system) applyThemeTo(w.frame.contentWindow);
       else WM.post(w, 'theme', { theme: t, accent: accentNow()[0] }, 100);
     });
-    if (H) HX.api('/api/system/bars', { method: 'POST', json: { light: t === 'light' } }).catch(function () { });
+    applyTint();
     HX.emit('theme', t);
   }
   function applyThemeTo(cw) {
@@ -190,6 +192,7 @@
     deskFree();
     WM.layoutAll();
     if (state.overview) layoutOverview();
+    applyTint();
   }
   shell.layout = layoutChrome;
   /** Ohne sichtbare Fenster zeigt sich ein ausgeblendetes Dock von selbst. */
@@ -216,6 +219,61 @@
     }, ms);
   }
   shell.isMobile = function () { return state.mobile; };
+
+  /* ================================================================== Leisten in der Farbe der App
+   * Füllt ein Fenster den Bildschirm (Handy-Ansicht oder maximiert), nehmen Leiste oben und Leiste unten die
+   * Farbe des oberen bzw. unteren App-Rands an, die Symbole von Android werden passend hell oder dunkel.
+   * Auf dem Desktop selbst, in Übersicht und Starter bleiben sie wie sie sind. */
+  var rgbCache = {};
+  function rgbOf(c) {
+    if (!c) return null;
+    if (rgbCache[c]) return rgbCache[c];
+    var d = document.createElement('div'); d.style.color = 'rgb(1, 2, 3)'; d.style.color = c;
+    document.body.appendChild(d);
+    var m = (getComputedStyle(d).color.match(/[\d.]+/g) || []).map(Number); d.remove();
+    if (m.length < 3 || (m[0] === 1 && m[1] === 2 && m[2] === 3 && !/^rgb\(\s*1\D+2\D+3\D/.test(c))) return null;   // ungültige Farbe
+    if (m.length > 3 && m[3] < 0.85) return null;
+    return (rgbCache[c] = m.slice(0, 3));
+  }
+  function isDark(rgb) { return (0.299 * rgb[0] + 0.587 * rgb[1] + 0.114 * rgb[2]) / 255 < 0.6; }
+  /** Farben einer System-App direkt aus dem Dokument (theme-color, sonst Hintergrund am Rand). */
+  function sysColors(w) {
+    try {
+      var d = w.frame.contentDocument, v = w.frame.contentWindow;
+      var at = function (y) {
+        var n = d.elementFromPoint(Math.round(v.innerWidth / 2), y);
+        while (n && n.nodeType === 1) { var c = v.getComputedStyle(n).backgroundColor; if (rgbOf(c)) return c; n = n.parentElement; }
+        return v.getComputedStyle(d.body).backgroundColor;
+      };
+      var meta = d.querySelector('meta[name="theme-color"]');
+      return { top: (meta && meta.content) || at(1), bottom: at(Math.max(0, v.innerHeight - 2)) };
+    } catch (e) { return { top: null, bottom: null }; }
+  }
+  var barsKey = '';
+  function applyTint() {
+    var w = WM.focused(), root = document.documentElement, b = document.body;
+    var on = !!(w && !w.min && !state.overview && !state.launcher && (state.mobile || w.max));
+    var top = null, bot = null;
+    if (on) {
+      var c = w.app.system ? sysColors(w) : { top: w.tintTop, bottom: w.tintBottom };
+      top = rgbOf(c.top); bot = rgbOf(c.bottom) || top;
+    }
+    var css = function (rgb) { return 'rgb(' + rgb.join(', ') + ')'; };
+    if (top) { root.style.setProperty('--tint-top', css(top)); root.style.setProperty('--tint-top-ink', isDark(top) ? '#F4F7FB' : '#121A33'); }
+    if (bot) { root.style.setProperty('--tint-bot', css(bot)); root.style.setProperty('--tint-bot-ink', isDark(bot) ? '#F4F7FB' : '#121A33'); }
+    b.classList.toggle('tint-top', !!top);
+    b.classList.toggle('tint-bot', !!bot && state.mobile);
+    // Symbole von Android: oben nach der Leiste oben, unten nach der Leiste unten (Handy) bzw. dem Desktop
+    var themeDark = themeNow() !== 'light';
+    var statusLight = top ? isDark(top) : themeDark;
+    var navLight = bot && state.mobile ? isDark(bot) : (top && !state.mobile ? isDark(top) : themeDark);
+    var key = statusLight + '|' + navLight;
+    if (H && key !== barsKey) {
+      barsKey = key;
+      HX.api('/api/system/bars', { method: 'POST', json: { statusLight: statusLight, navLight: navLight, light: !statusLight } }).catch(function () { barsKey = ''; });
+    }
+  }
+  shell.tint = applyTint;
 
   /* ================================================================== Leiste oben */
   function buildPanel() {
@@ -556,6 +614,7 @@
     if (!state.launcher) {
       state.launcher = true;
       $('launcher').hidden = false;
+      applyTint();
       document.body.classList.add('dim');
       state.launcherLayer = HX.pushLayer(closeLauncher);
     }
@@ -569,6 +628,7 @@
     if (!state.launcher) return;
     state.launcher = false;
     $('launcher').hidden = true;
+    applyTint();
     document.body.classList.remove('dim');
     if (state.launcherLayer) state.launcherLayer();
     renderNavBadge();
@@ -615,6 +675,7 @@
     if (state.overview) return;
     state.overview = true;
     document.body.classList.add('overview', 'dim');
+    applyTint();
     $('overview').hidden = false;
     $('ov-q').value = '';
     state.ovLayer = HX.pushLayer(exitOverview);
@@ -626,6 +687,7 @@
     if (!state.overview) return;
     state.overview = false;
     document.body.classList.remove('overview', 'dim');
+    applyTint();
     $('overview').hidden = true;
     ovLabels.forEach(function (n) { n.remove(); });
     ovLabels = [];
@@ -933,6 +995,9 @@
     switch (m.op) {
       case 'state':
         WM.setState(w, a);
+        if (a.themeColor !== undefined) w.tintTop = a.themeColor || null;
+        if (a.bottomColor !== undefined) w.tintBottom = a.bottomColor || null;
+        if (w === WM.focused()) applyTint();
         if (!w.ready) {
           w.ready = true;
           WM.post(w, 'theme', { theme: themeNow(), accent: accentNow()[0] }, 100);   // Apps können Hell/Dunkel übernehmen

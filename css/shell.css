@@ -398,3 +398,24 @@ body.mobile .win-bar { display: none; }
 body.mobile #p-active { max-width: 34vw; font-weight: 500; color: var(--paper); }
 body.mobile #p-status > span:not(.ic):not(.dot) { display: none; }
 body.mobile #p-active { max-width: 44vw; }
+
+/* Leisten in der Farbe der App (shell.js, applyTint): nur wenn ein Fenster den Bildschirm füllt */
+#panel, body.mobile #dock { transition: background-color .25s ease, color .25s ease, border-color .25s ease, transform .22s ease; }
+body.tint-top #panel {
+  background: var(--tint-top); color: var(--tint-top-ink);
+  border-bottom-color: color-mix(in srgb, var(--tint-top-ink) 12%, transparent);
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+body.tint-top #panel button:hover, body.tint-top #panel button[aria-expanded="true"] { background: color-mix(in srgb, var(--tint-top-ink) 12%, transparent); }
+body.tint-top #p-active, body.mobile.tint-top #p-active { color: inherit; }
+body.tint-top #p-grip span { background: color-mix(in srgb, var(--tint-top-ink) 45%, transparent); box-shadow: none; }
+body.mobile.tint-bot #dock {
+  background: var(--tint-bot); color: var(--tint-bot-ink);
+  border-top-color: color-mix(in srgb, var(--tint-bot-ink) 12%, transparent);
+  backdrop-filter: none; -webkit-backdrop-filter: none;
+}
+body.mobile.tint-bot .nav-btn { color: color-mix(in srgb, var(--tint-bot-ink) 62%, transparent); }
+body.mobile.tint-bot .nav-btn .ic { color: color-mix(in srgb, var(--tint-bot-ink) 80%, transparent); }
+body.mobile.tint-bot .nav-btn[aria-pressed="true"], body.mobile.tint-bot .nav-btn[aria-pressed="true"] .ic { color: var(--tint-bot-ink); }
+body.mobile.tint-bot.mdock #dock .dock-list { border-color: color-mix(in srgb, var(--tint-bot-ink) 14%, transparent); }
+body.mobile.tint-bot .dock-item:hover { background: color-mix(in srgb, var(--tint-bot-ink) 10%, transparent); }
